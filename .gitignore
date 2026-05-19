@@ -35,8 +35,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-#md
-*.md
+
 
 #schema
 schemas/
