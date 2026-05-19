@@ -1,0 +1,12 @@
+# config/settings.dev.yaml
+# V0 - Initial implementation
+# Dev overrides
+
+api:
+  port: 8000
+
+llm:
+  provider: mock
+
+logging:
+  level: DEBUG

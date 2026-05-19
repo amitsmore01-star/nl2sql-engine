@@ -1,0 +1,28 @@
+# config/settings.base.yaml
+# V0 - Initial implementation
+# Shared config — all environments
+
+app:
+  name: nl2sql-engine
+  version: "1.0"
+  schema_dir: schemas
+
+api:
+  port: 8000
+  prefix: /v1
+
+llm:
+  max_tokens: 1000
+  timeout_seconds: 30
+  retry_max: 3
+  retry_backoff_seconds: 2
+  step1_token_target: 1000
+  step2_token_target: 1200
+
+sql:
+  default_top_rows: 10000
+  max_nl_query_length: 1000
+
+logging:
+  level: INFO
+  rotation: daily

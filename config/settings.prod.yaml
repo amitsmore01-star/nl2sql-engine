@@ -1,0 +1,9 @@
+# config/settings.prod.yaml
+# V0 - Initial implementation
+# Prod overrides
+
+llm:
+  provider: azure_openai
+
+logging:
+  level: INFO
