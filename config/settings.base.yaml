@@ -1,6 +1,7 @@
 # config/settings.base.yaml
 # V0 - Initial implementation
 # Shared config — all environments
+# All keys must be declared here. Dev/prod may override values but never introduce new keys.
 
 app:
   name: nl2sql-engine
@@ -12,6 +13,7 @@ api:
   prefix: /v1
 
 llm:
+  provider: mock
   max_tokens: 1000
   timeout_seconds: 30
   retry_max: 3

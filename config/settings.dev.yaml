@@ -1,6 +1,6 @@
 # config/settings.dev.yaml
 # V0 - Initial implementation
-# Dev overrides
+# Dev overrides — only keys that differ from base
 
 api:
   port: 8000
