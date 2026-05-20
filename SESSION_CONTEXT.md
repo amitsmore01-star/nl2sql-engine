@@ -5,12 +5,16 @@
 - 1.2 ✅ Configuration
 - 1.3 ✅ Schema Models
 - 1.4 ✅ Schema Repository & Validator
+- 1.5 ✅ Health Check API (27 tests, all passing)
 
 ## Current Sprint
 Sprint 1 — Foundation
 
 ## Current Story
 1.5 — Health Check API
+
+## Next Story
+1.6 — Structured Logger
 
 ## Files Built So Far
 
@@ -35,6 +39,8 @@ Sprint 1 — Foundation
 - src/schema/schema_repository.py
 - src/schema/schema_validator.py
 - src/core/exceptions.py          ← SchemaLoadError only — rest added in 2.1
+- src/api/app.py                      ← new in 1.5
+- src/api/health.py                   ← new in 1.5
 
 
 ### Tests
@@ -44,12 +50,14 @@ Sprint 1 — Foundation
 - tests/schema/test_schema_models.py
 - tests/schema/test_schema_repository.py
 - tests/schema/test_schema_validator.py
+- tests/api/conftest.py               ← new in 1.5 (sets ENV/API_KEY/LLM_PROVIDER for all api tests)
+- tests/api/test_health.py            ← new in 1.5 (27 tests, all passing)
+
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
 
 ## Key Decisions Made
-
 ### Configuration (1.2)
 - ENV is case-sensitive — must be exactly `dev` or `prod` (not `DEV`)
 - settings.base.yaml owns all keys — dev/prod only override values, never introduce new keys
@@ -83,3 +91,23 @@ Sprint 1 — Foundation
 - Duplicate synonyms checked both within same table and across tables
 - Junction tables: empty synonyms passes, non-empty synonyms raises
 - src/core/exceptions.py created with NL2SQLBaseError + SchemaLoadError only
+
+Health Check API (1.5)
+
+Factory function pattern: create_app(schema_dir=None) — schema_dir override used in tests only
+Startup failure behaviour: if schemas fail to load, service still starts but /ready returns 503
+All startup state stored on app.state — health endpoints read from it, never re-load
+app.state fields: settings, schema_repo, schemas_loaded_ok, schemas_valid_ok, startup_error, schema_dir
+Lifespan context manager used (modern FastAPI pattern) — not deprecated @app.on_event
+/health and /ready are both auth-exempt — no X-API-Key required
+LLM provider check: reads settings.llm.provider only — no real API call
+log_dir_writable check: creates dir if missing, verifies is_dir + os.access(W_OK) — no file written
+4 readiness checks: schemas_loaded, schemas_valid, llm_provider, log_dir_writable
+TestClient MUST be used as context manager ("with" block) to trigger lifespan startup
+— without "with", startup never fires and app.state stays uninitialised
+tests/api/conftest.py sets ENV/API_KEY/LLM_PROVIDER via monkeypatch autouse fixture
+— this means tests work on any machine with or without a .env file
+_make_schema_dir uses parents=True, exist_ok=True — handles nested temp paths on Windows
+ready_response fixture in TestReadyHappyPath captures response inside "with" block and returns it
+— allows multiple test methods to share one startup without re-running it each time
+All 27 tests pass: H1-H4, H3b, R1-R7, F1-F7, E1-E5 + 2 extras
