@@ -35,7 +35,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-
+#arch doc
+nl2sql-engine-architecture.md
 
 #schema
 schemas/

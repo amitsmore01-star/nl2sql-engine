@@ -4,12 +4,13 @@
 - 1.1 ✅ Project Scaffold
 - 1.2 ✅ Configuration
 - 1.3 ✅ Schema Models
+- 1.4 ✅ Schema Repository & Validator
 
 ## Current Sprint
 Sprint 1 — Foundation
 
 ## Current Story
-1.4 — Schema Repository & Validator
+1.5 — Health Check API
 
 ## Files Built So Far
 
@@ -31,10 +32,18 @@ Sprint 1 — Foundation
 ### Source
 - src/config/settings.py           ← new in 1.2
 - src/schema/schema_models.py      ← new in 1.3 (43 tests, all passing)
+- src/schema/schema_repository.py
+- src/schema/schema_validator.py
+- src/core/exceptions.py          ← SchemaLoadError only — rest added in 2.1
+
 
 ### Tests
 - tests/config/test_settings.py    ← new in 1.2 (33 tests, all passing)
 - tests/schema/test_schema_models.py ← new in 1.3 (43 tests, all passing)
+- tests/config/test_settings.py
+- tests/schema/test_schema_models.py
+- tests/schema/test_schema_repository.py
+- tests/schema/test_schema_validator.py
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -57,3 +66,20 @@ Sprint 1 — Foundation
 - HierarchyConfig uses model_config extra=allow — dynamic level keys (top_Acc, sub_Acc) captured without hardcoding
 - Models parse faithfully — no business rule enforcement in models layer
 - Validator layer (Story 1.4) is sole enforcer of schema business rules
+
+### Schema Repository (1.4)
+- Filename must match appId exactly — wrong_name.json with appId ABC_app raises SchemaLoadError
+- Empty schema dir raises SchemaLoadError — at least one schema required
+- Non-.json files silently ignored
+- Empty file, malformed JSON, invalid schema structure all raise SchemaLoadError
+- Empty appId raises SchemaLoadError
+- get_schema() and get_all_schemas() both on SchemaRepository
+
+### Schema Validator (1.4)
+- validate_all() checks duplicate appId across schemas — validator's responsibility
+- validate_one() for single schema validation
+- Self-referencing relationships (Major.Acc → Major.Acc) explicitly allowed
+- Empty string and whitespace-only synonyms both rejected
+- Duplicate synonyms checked both within same table and across tables
+- Junction tables: empty synonyms passes, non-empty synonyms raises
+- src/core/exceptions.py created with NL2SQLBaseError + SchemaLoadError only
