@@ -28,3 +28,5 @@ sql:
 logging:
   level: INFO
   rotation: daily
+  log_dir: logs
+  log_archive_dir: logs/archive

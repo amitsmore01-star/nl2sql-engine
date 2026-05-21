@@ -166,7 +166,7 @@ def _check_log_dir(request: Request) -> dict:
     No actual file is written — existence + is_dir is sufficient.
     """
     settings = getattr(request.app.state, "settings", None)
-    log_dir_str = settings.log_dir if settings else "logs"
+    log_dir_str = settings.logging.log_dir if settings else "logs"
 
     log_dir = Path(log_dir_str)
 

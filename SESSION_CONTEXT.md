@@ -6,15 +6,19 @@
 - 1.3 ✅ Schema Models
 - 1.4 ✅ Schema Repository & Validator
 - 1.5 ✅ Health Check API (27 tests, all passing)
+- 1.6 ✅ Structured Logger (all tests passing)
 
 ## Current Sprint
-Sprint 1 — Foundation
+Sprint 1 — Foundation ✅ COMPLETE
 
 ## Current Story
-1.5 — Health Check API
+1.6 — Structured Logger
+
+## Next Sprint
+Sprint 2 — First Runnable Slice
 
 ## Next Story
-1.6 — Structured Logger
+2.1 — Core Models & Constants
 
 ## Files Built So Far
 
@@ -27,6 +31,7 @@ Sprint 1 — Foundation
 
 ### Config
 - config/settings.base.yaml        ← updated in 1.2 (added llm.provider to base)
+                                   ← updated in 1.6 (log_dir, log_archive_dir moved under logging:)
 - config/settings.dev.yaml
 - config/settings.prod.yaml
 
@@ -34,25 +39,34 @@ Sprint 1 — Foundation
 - schemas/ABC_app.json
 
 ### Source
-- src/config/settings.py           ← new in 1.2
-- src/schema/schema_models.py      ← new in 1.3 (43 tests, all passing)
+- src/config/settings.py            ← new in 1.2
+                                    ← updated in 1.6 (log_dir, log_archive_dir moved into LoggingSettings)
+- src/schema/schema_models.py       ← new in 1.3 (43 tests, all passing)
 - src/schema/schema_repository.py
 - src/schema/schema_validator.py
-- src/core/exceptions.py          ← SchemaLoadError only — rest added in 2.1
-- src/api/app.py                      ← new in 1.5
-- src/api/health.py                   ← new in 1.5
-
+- src/core/exceptions.py            ← SchemaLoadError only — rest added in 2.1
+- src/core/constants.py             ← new in 1.6 (log stage constants only — rest added in 2.1)
+- src/core/logging/log_models.py    ← new in 1.6
+- src/core/logging/logger.py        ← new in 1.6
+- src/api/app.py                    ← new in 1.5
+                                    ← updated in 1.6 (log_dir path fixed to settings.logging.log_dir)  
+- src/api/health.py                 ← new in 1.5
+                                    ← updated in 1.6 (log_dir path fixed to settings.logging.log_dir)
 
 ### Tests
-- tests/config/test_settings.py    ← new in 1.2 (33 tests, all passing)
+- tests/config/test_settings.py     ← new in 1.2 (33 tests, all passing)
+                                    ← updated in 1.6 (log_dir assertion fixed + _write_valid_base helper updated)
 - tests/schema/test_schema_models.py ← new in 1.3 (43 tests, all passing)
 - tests/config/test_settings.py
 - tests/schema/test_schema_models.py
 - tests/schema/test_schema_repository.py
 - tests/schema/test_schema_validator.py
-- tests/api/conftest.py               ← new in 1.5 (sets ENV/API_KEY/LLM_PROVIDER for all api tests)
-- tests/api/test_health.py            ← new in 1.5 (27 tests, all passing)
+- tests/api/conftest.py                 ← new in 1.5 (sets ENV/API_KEY/LLM_PROVIDER for all api tests)
+- tests/api/test_health.py              ← new in 1.5 (27 tests, all passing)
+                                        ← updated in 1.6 (log_dir path fixed manually)
 
+- tests/core/logging/test_log_models.py  ← new in 1.6 (M1-M9, all passing)
+- tests/core/logging/test_logger.py     ← new in 1.6 (L1-L17, all passing)
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -92,22 +106,44 @@ Sprint 1 — Foundation
 - Junction tables: empty synonyms passes, non-empty synonyms raises
 - src/core/exceptions.py created with NL2SQLBaseError + SchemaLoadError only
 
-Health Check API (1.5)
 
-Factory function pattern: create_app(schema_dir=None) — schema_dir override used in tests only
-Startup failure behaviour: if schemas fail to load, service still starts but /ready returns 503
-All startup state stored on app.state — health endpoints read from it, never re-load
-app.state fields: settings, schema_repo, schemas_loaded_ok, schemas_valid_ok, startup_error, schema_dir
-Lifespan context manager used (modern FastAPI pattern) — not deprecated @app.on_event
-/health and /ready are both auth-exempt — no X-API-Key required
-LLM provider check: reads settings.llm.provider only — no real API call
-log_dir_writable check: creates dir if missing, verifies is_dir + os.access(W_OK) — no file written
-4 readiness checks: schemas_loaded, schemas_valid, llm_provider, log_dir_writable
-TestClient MUST be used as context manager ("with" block) to trigger lifespan startup
-— without "with", startup never fires and app.state stays uninitialised
-tests/api/conftest.py sets ENV/API_KEY/LLM_PROVIDER via monkeypatch autouse fixture
-— this means tests work on any machine with or without a .env file
+### Health Check API (1.5)
+- Factory function pattern: create_app(schema_dir=None) — schema_dir override used in tests only
+- Startup failure behaviour: if schemas fail to load, service still starts but /ready returns 503
+- All startup state stored on app.state — health endpoints read from it, never re-load
+- app.state fields: settings, schema_repo, schemas_loaded_ok, schemas_valid_ok, startup_error, schema_dir
+- Lifespan context manager used (modern FastAPI pattern) — not deprecated @app.on_event
+- /health and /ready are both auth-exempt — no X-API-Key required
+- LLM provider check: reads settings.llm.provider only — no real API call
+- log_dir_writable check: reads settings.logging.log_dir (updated in 1.6)
+- 4 readiness checks: schemas_loaded, schemas_valid, llm_provider, log_dir_writable
+- TestClient MUST be used as context manager ("with" block) to trigger lifespan startup
+- without "with", startup never fires and app.state stays uninitialised tests/api/conftest.py sets ENV/API_KEY/LLM_PROVIDER via monkeypatch autouse fixture this means tests work on any machine with or without a .env file 
 _make_schema_dir uses parents=True, exist_ok=True — handles nested temp paths on Windows
 ready_response fixture in TestReadyHappyPath captures response inside "with" block and returns it
 — allows multiple test methods to share one startup without re-running it each time
 All 27 tests pass: H1-H4, H3b, R1-R7, F1-F7, E1-E5 + 2 extras
+
+### Structured Logger (1.6)
+- log_dir and log_archive_dir moved from flat root Settings into LoggingSettings
+- YAML keys: logging.log_dir and logging.log_archive_dir (under logging: section)
+- Code access: settings.logging.log_dir and settings.logging.log_archive_dir
+- app.py and health.py updated manually to use new path
+- test_settings.py updated: log_dir assertion fixed + _write_valid_base helper updated
+- StructuredLogger(settings) — receives full Settings object, reads logging sub-model
+- One JSONL file per request_id: {log_dir}/{request_id}.log
+- Rotation: on write — checks file mtime before each write
+- If file mtime date < today → move to {log_archive_dir}/YYYY-MM-DD/ then write fresh file
+- Rotation tested using os.utime() to set file mtime to yesterday — no mocking needed
+- After rotation: old file in archive, new file created in log_dir with new entry only
+- Phase 3: background scheduler rotation to replace on-write rotation
+- src/core/constants.py created with 9 log stage constants only (rest in 2.1):
+    REQUEST_RECEIVED, APP_DETECTED, LLM_INTENT_OUTPUT, LLM_SCHEMA_MAPPING_OUTPUT,
+    VALIDATION_RESULT, STRUCTURED_QUERY_BUILT, SQL_BUILT, RESPONSE_SENT, USER_FEEDBACK
+
+---
+
+## Architecture Document Updates Made (Story 1.6)
+- Section 2 row 19: Log rotation updated to "Daily — triggered on write (date check per entry). Phase 3: background scheduler"
+- Section 12: Rotation behaviour documented as on-write date check
+- Section 17 Phase 3: Background scheduler rotation added to scope

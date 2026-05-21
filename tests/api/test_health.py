@@ -304,7 +304,7 @@ class TestReadyFailures:
 
         with TestClient(app, raise_server_exceptions=False) as client:
             # Startup succeeds — now override log_dir to point at the fake file
-            app.state.settings.log_dir = str(fake_log_path)
+            app.state.settings.logging.log_dir = str(fake_log_path)
             response = client.get("/ready")
 
         assert response.status_code == 503

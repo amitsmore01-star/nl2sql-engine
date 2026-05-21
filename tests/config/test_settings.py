@@ -187,7 +187,8 @@ class TestEnvSecretsLoad:
         _set_env(monkeypatch, BASE_ENV)
         monkeypatch.delenv("LOG_DIR", raising=False)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.log_dir == "logs"
+        assert settings.logging.log_dir == "logs"
+
 
 
 # ===========================================================================
@@ -338,7 +339,9 @@ class TestUnknownKeyInYaml:
             "  max_nl_query_length: 1000\n"
             "logging:\n"
             "  level: INFO\n"
-            "  rotation: daily\n",
+            "  rotation: daily\n"
+            "  log_dir: logs\n"
+            "  log_archive_dir: logs/archive\n",
             encoding="utf-8",
         )
 
