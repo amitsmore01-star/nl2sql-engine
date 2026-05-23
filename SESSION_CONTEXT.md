@@ -7,18 +7,19 @@
 - 1.4 ✅ Schema Repository & Validator
 - 1.5 ✅ Health Check API (27 tests, all passing)
 - 1.6 ✅ Structured Logger (all tests passing)
+- 2.1 ✅ Core Models & Constants
 
-## Current Sprint
+## Completed Sprint
 Sprint 1 — Foundation ✅ COMPLETE
 
-## Current Story
-1.6 — Structured Logger
-
-## Next Sprint
+## Current Sprint
 Sprint 2 — First Runnable Slice
 
-## Next Story
+## Current Story
 2.1 — Core Models & Constants
+
+## Next Story
+2.2 — App Identifier
 
 ## Files Built So Far
 

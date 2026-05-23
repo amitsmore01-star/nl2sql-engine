@@ -1,5 +1,7 @@
 # config/settings.base.yaml
 # V0 - Initial implementation
+# V1 - Updated in Story 2.1: default_top_rows and max_nl_query_length set to 0
+#      0 means no limit applied — SQL Builder omits TOP clause, API skips length check
 # Shared config — all environments
 # All keys must be declared here. Dev/prod may override values but never introduce new keys.
 
@@ -22,8 +24,8 @@ llm:
   step2_token_target: 1200
 
 sql:
-  default_top_rows: 10000
-  max_nl_query_length: 1000
+  default_top_rows: 0        # 0 = omit TOP clause entirely. Any positive number = SELECT TOP {n}
+  max_nl_query_length: 0     # 0 = no length limit enforced. Any positive number = enforce limit
 
 logging:
   level: INFO
