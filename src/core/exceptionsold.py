@@ -1,7 +1,6 @@
 # src/core/exceptions.py
 # V0 - Initial implementation
 # V1 - Story 2.1: Added 11 exception subclasses total.
-# V2 - Story 2.5: MissingContextFieldsError extended with missing_fields: list[str] attribute.
 # All custom exceptions for the nl2sql-engine.
 # Every exception carries a machine-readable code and a human-readable message.
 # Codes must match the constants defined in src/core/constants.py exactly.
@@ -137,22 +136,12 @@ class MissingContextFieldsError(NL2SQLBaseError):
     Raised when a Foundry tool endpoint receives a QueryContext that is missing
     one or more required fields for that pipeline stage.
     HTTP status: 400 — the error is in what the agent sent, not in pipeline logic.
-
-    Attributes:
-        missing_fields : list of field names that were absent or empty.
-                         Callers inspect this directly rather than parsing
-                         the message string.
-
-    Example:
-        raise MissingContextFieldsError(
-            message="Stage 'schema-mapper' is missing: intent_output",
-            missing_fields=["intent_output"],
-        )
+ 
+    The message should list exactly which fields are missing so the agent can fix
+    its call. Example: "Missing required fields for schema-mapper: intent_output"
     """
-    def __init__(self, message: str, missing_fields: list[str] | None = None) -> None:
+    def __init__(self, message: str) -> None:
         super().__init__(code=MISSING_CONTEXT_FIELDS, message=message)
-        # Always a list — never None — so callers can safely iterate
-        self.missing_fields: list[str] = missing_fields or []
  
  
 # ---------------------------------------------------------------------------

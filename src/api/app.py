@@ -125,4 +125,9 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     from src.api.health import router as health_router
     app.include_router(health_router)
 
+    # Foundry tool routers
+    # feedback_tool: POST /v1/tools/feedback — Phase 3 placeholder, returns 501
+    from src.api.tools.feedback_tool import router as feedback_tool_router
+    app.include_router(feedback_tool_router, prefix="/v1/tools")
+
     return app
