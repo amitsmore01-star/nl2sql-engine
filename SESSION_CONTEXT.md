@@ -9,15 +9,16 @@
 - 1.6 ✅ Structured Logger (all tests passing)
 - 2.1 ✅ Core Models & Constants (all tests passing)
 - 2.2 ✅ App Identifier (all tests passing)
+- 2.3 ✅ Request & Response Models (all tests passing)
 
 ## Current Sprint
 Sprint 2 — Core Models, Auth & App Identifier
 
 ## Current Story
-2.2 — App Identifier ✅ COMPLETE
+2.3 — Request & Response Models ✅ COMPLETE
 
 ## Next Story
-2.3 — Request & Response Models
+2.4 — API Authentication (both keys)
 
 ## Files Built So Far
 
@@ -55,6 +56,9 @@ Sprint 2 — Core Models, Auth & App Identifier
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed to settings.logging.log_dir)
 - src/validator/app_identifier.py   ← new in 2.2
+- src/api/models/request.py   ← new in 2.3
+- src/api/models/response.py  ← new in 2.3
+
 
 ### Tests
 - tests/config/test_settings.py          ← new in 1.2 (33 tests, all passing)
@@ -71,6 +75,7 @@ Sprint 2 — Core Models, Auth & App Identifier
 - tests/core/test_constants.py           ← new in 2.1
 - tests/core/test_exceptions.py          ← new in 2.1
 - tests/validator/test_app_identifier.py ← new in 2.2 (all tests passing)
+- tests/api/test_models.py    ← new in 2.3
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -175,6 +180,34 @@ Sprint 2 — Core Models, Auth & App Identifier
 - Tests use MagicMock for schema and repo objects — no real JSON files needed in unit tests
 - Second fake schema used in C1/E2 tests to force MultipleAppsMatchedError
 - All test groups pass: A1-A7, B1-B3, C1, D1-D1c, D2-D3, E1-E2 + helper unit tests
+
+## Key Decisions (2.3)
+- ToolRequest inherits QueryContext (Option C) — extensible without touching QueryContext
+- FeedbackRequest.status uses Literal["pass", "fail"] — Pydantic enforces this automatically
+- nl_query length validation skipped in model — handled by pipeline orchestrator (has settings)
+- QueryResponseData and QueryResponseMeta are separate sub-models — independently testable
+- ToolResponse.context is Optional[QueryContext] — None only if request was completely malformed
+- model_validate(dict) used in all tests — mirrors what FastAPI does with JSON request bodiesRequestPY DownloadResponsePY DownloadTest modelsPY DownloadDownload allYou said: _________________________________________________ TestToolRequest._________________________________________________ TestToolRequest.test_treq2_missing_request_id_raises _________________________________________________
+self = <tests.api.test_models.TestToolRequest object at 0x000001BC6BA1BB10>
+    def test_treq2_missing_request_id_raises(self):
+        """TReq-2: request_id missing from context → raises ValidationError."""
+        data = make_query_context_dict()
+        del data["request_id"]      with pytest.raises(ValidationError) as exc_info:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>
+tests\api\test_models.py:288: Failed
+=============================================================== short test summary info ================================================================
+FAILED tests/api/test_models.py::TestToolRequest::test_treq2_missing_request_id_raises - Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'> . is this correct ? since we are autogenerating requst_id if not present , do we want test to autogenearte rather than thrwoing error ?Show more1:39 AMClaude responded: Great catch — you are absolutely right.Great catch — you are absolutely right. This is not a bug in the code, it is a bug in the test.
+request_id has default_factory=lambda: str(uuid.uuid4()) in QueryContext — so when it is missing from the dict, Pydantic auto-generates one instead of raising an error. That is the correct and intended behaviour.
+The test was wrong to expect a ValidationError here.
+
+Fix — update TReq-2
+The test should verify the correct behaviour: missing request_id → auto-generated, not an error.Viewed a file, edited a file, read a fileViewed a file, edited a file, read a fileReplace tests/api/test_models.py with this updated file and run again:
+bashpytest tests/api/test_models.py -v
+
+What changed and why
+The original scenario description said "request_id missing → raises ValidationError" — that was wrong because request_id is optional by design (auto-generated if absent). This is intentional — callers that don't provide a request_id get one assigned automatically for log correlation.
+nl_query_original in TReq-3 is still correct to raise — it has no default and is genuinely required.Test modelsPY Download
 
 ## Architecture Document Updates Made
 ### Story 1.6
