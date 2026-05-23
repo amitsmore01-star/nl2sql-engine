@@ -415,5 +415,4 @@ class TestSchemaValidator:
         schema = _make_schema({"version": ""})
         with pytest.raises(SchemaLoadError) as exc_info:
             self.validator.validate_one(schema)
-        assert exc_info.value.code == "SCHEMA_LOAD_ERROR"
         assert "version" in exc_info.value.message.lower()

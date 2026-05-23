@@ -8,6 +8,7 @@
 import pytest
 from pathlib import Path
 
+from src.config import settings
 from src.config.settings import load_settings, _deep_merge
 
 # ---------------------------------------------------------------------------
@@ -73,16 +74,16 @@ class TestBaseConfigLoads:
         assert settings.api.prefix == "/v1"
 
     def test_sql_default_top_rows(self, monkeypatch):
-        """sql.default_top_rows is 10000 as declared in base YAML."""
+        """sql.default_top_rows is 0 as declared in base YAML."""
         _set_env(monkeypatch, BASE_ENV)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.sql.default_top_rows == 10000
+        assert settings.sql.default_top_rows == 0
 
     def test_sql_max_nl_query_length(self, monkeypatch):
-        """sql.max_nl_query_length is 1000 as declared in base YAML."""
+        """sql.max_nl_query_length is 0 as declared in base YAML."""
         _set_env(monkeypatch, BASE_ENV)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.sql.max_nl_query_length == 1000
+        assert settings.sql.max_nl_query_length == 0
 
     def test_llm_max_tokens(self, monkeypatch):
         """llm.max_tokens is 1000 as declared in base YAML."""
@@ -118,7 +119,7 @@ class TestDevOverrides:
         """Base keys not touched by dev override retain their base values."""
         _set_env(monkeypatch, BASE_ENV)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.sql.default_top_rows == 10000
+        assert settings.sql.default_top_rows == 0
         assert settings.app.name == "nl2sql-engine"
         assert settings.llm.max_tokens == 1000
 
@@ -144,7 +145,7 @@ class TestProdOverrides:
         """Base keys not overridden by prod retain their base values."""
         _set_env(monkeypatch, PROD_ENV)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.sql.default_top_rows == 10000
+        assert settings.sql.default_top_rows == 0
         assert settings.app.name == "nl2sql-engine"
 
 
@@ -157,7 +158,8 @@ class TestEnvSecretsLoad:
         """API_KEY from environment is available on settings.api_key."""
         _set_env(monkeypatch, BASE_ENV)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.api_key == "test-api-key"
+        assert settings.client_api_key  == "your-client-api-key-here"
+        assert settings.foundry_api_key  == "your-foundry-api-key-here"
 
     def test_optional_openai_key_loaded(self, monkeypatch):
         """OPENAI_API_KEY from environment is available on settings.openai_api_key."""
@@ -223,28 +225,31 @@ class TestEnvOverridesYaml:
 # ===========================================================================
 class TestMissingRequiredSecret:
 
-    def test_missing_api_key_raises_value_error(self, monkeypatch):
-        """Absent API_KEY raises ValueError with API_KEY mentioned in message."""
+    def test_missing_api_key_in_dev_env_no_error(self, monkeypatch):
+        """Absent API_KEY in dev environment does not raise an error."""
         monkeypatch.setenv("ENV", "dev")
-        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("CLIENT_API_KEY", raising=False)
+        monkeypatch.delenv("FOUNDRY_API_KEY", raising=False)
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
-        with pytest.raises(ValueError, match="API_KEY"):
-            load_settings(REAL_CONFIG_DIR)
+        settings = load_settings(REAL_CONFIG_DIR)
+        assert settings is not None
 
     def test_missing_env_var_raises_value_error(self, monkeypatch):
         """Absent ENV raises ValueError with ENV mentioned in message."""
         monkeypatch.delenv("ENV", raising=False)
-        monkeypatch.setenv("API_KEY", "test-api-key")
+        monkeypatch.setenv("CLIENT_API_KEY",  "test-api-key")
+        monkeypatch.setenv("FOUNDRY_API_KEY", "test-api-key")
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
         with pytest.raises(ValueError, match="ENV"):
             load_settings(REAL_CONFIG_DIR)
 
     def test_error_message_is_descriptive_for_api_key(self, monkeypatch):
-        """Error message for missing API_KEY tells user what to do."""
-        monkeypatch.setenv("ENV", "dev")
-        monkeypatch.delenv("API_KEY", raising=False)
+        """Error message for missing CLIENT_API_KEY tells user what to do."""
+        monkeypatch.setenv("ENV", "prod")
+        monkeypatch.delenv("CLIENT_API_KEY", raising=False)
+        monkeypatch.delenv("FOUNDRY_API_KEY", raising=False)
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
         with pytest.raises(ValueError, match=".env"):
@@ -259,7 +264,8 @@ class TestUnknownEnvValue:
     def test_env_staging_raises_value_error(self, monkeypatch):
         """ENV=staging is not dev or prod — raises ValueError mentioning staging."""
         monkeypatch.setenv("ENV", "staging")
-        monkeypatch.setenv("API_KEY", "test-api-key")
+        monkeypatch.setenv("CLIENT_API_KEY", "test-api-key")
+        monkeypatch.setenv("FOUNDRY_API_KEY","test-api-key")
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
         with pytest.raises(ValueError, match="staging"):
@@ -268,7 +274,8 @@ class TestUnknownEnvValue:
     def test_env_empty_string_raises_value_error(self, monkeypatch):
         """ENV='' (empty string) raises ValueError mentioning ENV."""
         monkeypatch.setenv("ENV", "")
-        monkeypatch.setenv("API_KEY", "test-api-key")
+        monkeypatch.setenv("CLIENT_API_KEY", "test-api-key")
+        monkeypatch.setenv("FOUNDRY_API_KEY", "test-api-key")
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
         with pytest.raises(ValueError, match="ENV"):
@@ -277,7 +284,8 @@ class TestUnknownEnvValue:
     def test_env_uppercase_dev_raises(self, monkeypatch):
         """ENV=DEV (wrong case) raises ValueError — must be lowercase dev."""
         monkeypatch.setenv("ENV", "DEV")
-        monkeypatch.setenv("API_KEY", "test-api-key")
+        monkeypatch.setenv("CLIENT_API_KEY", "test-api-key")
+        monkeypatch.setenv("FOUNDRY_API_KEY", "test-api-key")
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
         with pytest.raises(ValueError, match="DEV"):

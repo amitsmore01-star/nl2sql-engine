@@ -1,5 +1,8 @@
 # src/schema/schema_repository.py
 # V0 - Initial implementation
+# V1 - Story 2.4: Removed stale code= kwarg from all SchemaLoadError calls.
+#      SchemaLoadError.__init__ was updated in Story 2.1 to take message only
+#      (code is injected automatically). schema_repository.py was missed then.
 
 import json
 from pathlib import Path
@@ -46,7 +49,6 @@ class SchemaRepository:
         # --- 1. Directory must exist ---
         if not schema_dir.exists() or not schema_dir.is_dir():
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema directory not found: '{schema_dir}'"
             )
 
@@ -54,7 +56,6 @@ class SchemaRepository:
         json_files = list(schema_dir.glob("*.json"))
         if not json_files:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"No schema files found in '{schema_dir}'. "
                         "At least one .json schema file is required."
             )
@@ -77,7 +78,6 @@ class SchemaRepository:
         schema = self._schemas.get(app_id)
         if schema is None:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"No schema loaded for app_id '{app_id}'. "
                         f"Available: {list(self._schemas.keys())}"
             )
@@ -103,7 +103,6 @@ class SchemaRepository:
         raw = path.read_text(encoding="utf-8").strip()
         if not raw:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema file is empty: '{path.name}'"
             )
 
@@ -112,7 +111,6 @@ class SchemaRepository:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Malformed JSON in schema file '{path.name}': {exc}"
             ) from exc
 
@@ -121,14 +119,12 @@ class SchemaRepository:
             schema = AppSchema(**data)
         except (ValidationError, TypeError) as exc:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema file '{path.name}' failed validation: {exc}"
             ) from exc
 
         # --- 4. appId must not be empty ---
         if not schema.appId.strip():
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema file '{path.name}' has an empty appId."
             )
 
@@ -136,7 +132,6 @@ class SchemaRepository:
         expected_filename = f"{schema.appId}.json"
         if path.name != expected_filename:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=(
                     f"Schema filename mismatch: file is '{path.name}' "
                     f"but appId inside is '{schema.appId}'. "

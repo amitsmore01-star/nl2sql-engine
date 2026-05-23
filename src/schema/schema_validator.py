@@ -57,7 +57,6 @@ class SchemaValidator:
         for schema in schemas:
             if schema.appId in seen:
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=f"Duplicate appId '{schema.appId}' found across schema files. "
                             "Each app must have a unique appId."
                 )
@@ -87,26 +86,22 @@ class SchemaValidator:
         # appId — enforced by Pydantic (str, required) but check non-empty
         if not schema.appId or not schema.appId.strip():
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message="Schema has an empty 'appId' field."
             )
         # app_name
         if not schema.app_name or not schema.app_name.strip():
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema '{schema.appId}' has an empty 'app_name' field."
             )
         # version — must be present and non-empty
         if not schema.version or not schema.version.strip():
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema '{schema.appId}' has an empty 'version' field."
             )
 
     def _check_tables_non_empty(self, schema: AppSchema) -> None:
         if not schema.tables:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema '{schema.appId}' has an empty 'tables' list. "
                         "At least one table is required."
             )
@@ -114,7 +109,6 @@ class SchemaValidator:
     def _check_table_name(self, table: TableSchema, app_id: str) -> None:
         if not table.name or not table.name.strip():
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Schema '{app_id}' contains a table with an empty 'name' field."
             )
 
@@ -122,7 +116,6 @@ class SchemaValidator:
         # columns[] must be present and non-empty
         if not table.columns:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Table '{table.name}' in schema '{app_id}' "
                         "has an empty 'columns' list. At least one column is required."
             )
@@ -131,13 +124,11 @@ class SchemaValidator:
         for col in table.columns:
             if not col.name or not col.name.strip():
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=f"Table '{table.name}' in schema '{app_id}' "
                             "contains a column with an empty 'name' field."
                 )
             if col.name in seen_cols:
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=f"Table '{table.name}' in schema '{app_id}' "
                             f"has duplicate column name '{col.name}'."
                 )
@@ -153,7 +144,6 @@ class SchemaValidator:
             # Junction tables must have empty synonyms[]
             if table.synonyms:
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=f"Junction table '{table.name}' in schema '{app_id}' "
                             "must have an empty 'synonyms' list."
                 )
@@ -162,7 +152,6 @@ class SchemaValidator:
         # Non-junction: synonyms[] must be non-empty
         if not table.synonyms:
             raise SchemaLoadError(
-                code="SCHEMA_LOAD_ERROR",
                 message=f"Non-junction table '{table.name}' in schema '{app_id}' "
                         "has an empty 'synonyms' list. At least one synonym is required."
             )
@@ -173,13 +162,11 @@ class SchemaValidator:
         for syn in table.synonyms:
             if not syn or not syn.strip():
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=f"Table '{table.name}' in schema '{app_id}' "
                             "contains a blank or whitespace-only synonym."
                 )
             if syn in seen_in_table:
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=f"Table '{table.name}' in schema '{app_id}' "
                             f"has duplicate synonym '{syn}' within the same table."
                 )
@@ -188,7 +175,6 @@ class SchemaValidator:
             # Cross-table duplicate check within same app
             if syn in all_synonyms:
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=(
                         f"Duplicate synonym '{syn}' in schema '{app_id}': "
                         f"claimed by both '{all_synonyms[syn]}' and '{table.name}'."
@@ -205,7 +191,6 @@ class SchemaValidator:
         for rel in table.relationships:
             if rel.related_table not in table_names:
                 raise SchemaLoadError(
-                    code="SCHEMA_LOAD_ERROR",
                     message=(
                         f"Table '{table.name}' in schema '{app_id}' has a relationship "
                         f"pointing to '{rel.related_table}', which does not exist in the schema."

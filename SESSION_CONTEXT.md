@@ -10,15 +10,16 @@
 - 2.1 ✅ Core Models & Constants (all tests passing)
 - 2.2 ✅ App Identifier (all tests passing)
 - 2.3 ✅ Request & Response Models (all tests passing)
+- 2.4 ✅ API Authentication (all tests passing)
 
 ## Current Sprint
 Sprint 2 — Core Models, Auth & App Identifier
 
 ## Current Story
-2.3 — Request & Response Models ✅ COMPLETE
+2.4 — API Authentication ✅ COMPLETE
 
 ## Next Story
-2.4 — API Authentication (both keys)
+2.5 — Context Validator
 
 ## Files Built So Far
 
@@ -41,8 +42,12 @@ Sprint 2 — Core Models, Auth & App Identifier
 ### Source
 - src/config/settings.py            ← new in 1.2
                                     ← updated in 1.6 (log_dir, log_archive_dir moved into LoggingSettings)
+                                    ← V1 in 2.4 (replaced api_key with client_api_key + foundry_api_key, added prod validator, fixed
+                                            log_dir/log_archive_dir into merged["logging"] section)
+                                    
 - src/schema/schema_models.py       ← new in 1.3 (43 tests, all passing)
-- src/schema/schema_repository.py
+- src/schema/schema_repository.py   ← V1 in 2.4 (removed stale code= kwarg from all SchemaLoadError calls — missed in Story 2.1)
+
 - src/schema/schema_validator.py
 - src/core/exceptions.py            ← SchemaLoadError only in 1.4
                                     ← updated in 2.1 (all 11 exception subclasses added)
@@ -58,6 +63,8 @@ Sprint 2 — Core Models, Auth & App Identifier
 - src/validator/app_identifier.py   ← new in 2.2
 - src/api/models/request.py   ← new in 2.3
 - src/api/models/response.py  ← new in 2.3
+- src/api/auth.py                        ← new in 2.4 (require_client_key, require_foundry_key)
+
 
 
 ### Tests
@@ -67,6 +74,7 @@ Sprint 2 — Core Models, Auth & App Identifier
 - tests/schema/test_schema_repository.py
 - tests/schema/test_schema_validator.py
 - tests/api/conftest.py                  ← new in 1.5 (sets ENV/API_KEY/LLM_PROVIDER for all api tests)
+                                         ← V1 in 2.4 (replaced API_KEY with CLIENT_API_KEY and FOUNDRY_API_KEY)
 - tests/api/test_health.py               ← new in 1.5 (27 tests, all passing)
                                           ← updated in 1.6 (log_dir path fixed)
 - tests/core/logging/test_log_models.py  ← new in 1.6 (M1-M9, all passing)
@@ -75,7 +83,8 @@ Sprint 2 — Core Models, Auth & App Identifier
 - tests/core/test_constants.py           ← new in 2.1
 - tests/core/test_exceptions.py          ← new in 2.1
 - tests/validator/test_app_identifier.py ← new in 2.2 (all tests passing)
-- tests/api/test_models.py    ← new in 2.3
+- tests/api/test_models.py              ← new in 2.3
+- tests/api/test_auth.py                 ← new in 2.4 (A1-A5, B1-B5, C1-C3, D1-D2, all passing)
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -208,6 +217,33 @@ bashpytest tests/api/test_models.py -v
 What changed and why
 The original scenario description said "request_id missing → raises ValidationError" — that was wrong because request_id is optional by design (auto-generated if absent). This is intentional — callers that don't provide a request_id get one assigned automatically for log correlation.
 nl_query_original in TReq-3 is still correct to raise — it has no default and is genuinely required.Test modelsPY Download
+
+## Key Decisions (2.4)
+
+### API Authentication
+- Two separate keys — CLIENT_API_KEY and FOUNDRY_API_KEY — stored in .env only, never in YAML
+- Same header for both: X-API-Key — the route determines which key to validate against
+- require_client_key  → protects POST /v1/query   → validates against settings.client_api_key
+- require_foundry_key → protects POST /v1/tools/* → validates against settings.foundry_api_key
+- Both dependencies declared per route via Depends() — standard FastAPI pattern
+- Auth failure response is identical for missing and wrong key (no info leakage):
+    HTTP 401  { "detail": "Unauthorized" }
+- Exact match only — no whitespace trimming — caller's responsibility
+- Empty string header treated same as missing header → 401
+- Keys typed as Optional[str] = None at field level in Settings
+- prod: missing key at startup raises ValueError — service will not start
+- dev: missing key allowed — every request to that route returns 401
+- Enforced via model_validator(mode="after") require_keys_in_prod in Settings
+- Keys read from env via os.environ.get("CLIENT_API_KEY") — empty string normalised to None
+- auth.py reads keys from request.app.state.settings — set during lifespan startup
+- APIKeyHeader(name="X-API-Key", auto_error=False) used — auto_error=False means
+  missing header returns None (not 422) so we can return 401 ourselves
+- Exempt routes: GET /health, GET /ready — no Depends() declared on those routes
+
+### Bug Fix (schema_repository.py — missed in 2.1)
+- All SchemaLoadError calls used old signature SchemaLoadError(code=..., message=...)
+- Story 2.1 changed signature to SchemaLoadError(message=...) only — code auto-injected
+- schema_repository.py was never updated — fixed in 2.4 (6 call sites corrected)
 
 ## Architecture Document Updates Made
 ### Story 1.6
