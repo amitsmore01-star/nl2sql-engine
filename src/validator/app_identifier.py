@@ -1,5 +1,10 @@
 # src/validator/app_identifier.py
 # V0 - Initial implementation
+# V1 - Bug fix: logger.log() now receives a LogEntry object instead of keyword
+#      arguments. StructuredLogger.log() signature is log(entry: LogEntry) —
+#      it does not accept keyword args. Callers must construct LogEntry first.
+#      This follows Option B (industry standard): logger is a dumb writer,
+#      caller is responsible for building the log entry.
 #
 # Contains run_app_identifier(context, schema_repo, logger) — the single internal
 # function that identifies which app schema the NL query belongs to.
@@ -22,6 +27,7 @@ import time
 
 from src.core.constants import APP_DETECTED
 from src.core.exceptions import AppNotDeterminedError, MultipleAppsMatchedError
+from src.core.logging.log_models import LogEntry
 from src.core.models import QueryContext
 from src.schema.schema_repository import SchemaRepository
 from src.core.logging.logger import StructuredLogger
@@ -78,18 +84,21 @@ def run_app_identifier(
         The same context object with app_id and app_schema_version populated.
     """
     start_time = time.monotonic()
-    all_schemas = schema_repo.get_all_schemas()  # dict[str, AppSchema]
+    all_schemas = schema_repo.get_all_schemas()  
 
     # ------------------------------------------------------------------
     # Path 1 — Explicit app_id already set on context
     # ------------------------------------------------------------------
     if context.app_id:
-        matched_schema = all_schemas.get(context.app_id)
+        matched_schema = next(
+            (s for s in all_schemas if s.appId == context.app_id),
+            None )
+       # matched_schema = all_schemas.get(context.app_id)
 
         if matched_schema is None:
             raise AppNotDeterminedError(
                 f"Explicit app_id '{context.app_id}' does not match any loaded schema. "
-                f"Loaded apps: {list(all_schemas.keys())}"
+                f"Loaded apps: {[s.app_name for s in all_schemas]}"
             )
 
         # app_id already correct — just populate version
@@ -102,8 +111,11 @@ def run_app_identifier(
     else:
         query_text = context.nl_query_original
         matched_schemas = []  # collect all matches to detect ambiguity
-
-        for app_id, schema in all_schemas.items():
+        print("ALL:", all_schemas)
+        print("TYPE:", type(all_schemas))
+        for  schema in all_schemas:
+            print("TYPE:", type(schema), "VALUE:", schema)
+           
             # Check the app_name itself first, then each synonym
             # appSynonyms is stored on the schema as a list of strings
             candidates = [schema.app_name] + list(schema.appSynonyms)
@@ -116,7 +128,7 @@ def run_app_identifier(
         if len(matched_schemas) == 0:
             raise AppNotDeterminedError(
                 f"No app could be identified from query: '{context.nl_query_original}'. "
-                f"Loaded apps: {list(all_schemas.keys())}"
+               f"Loaded apps: {[s.app_name for s in all_schemas]}"
             )
 
         if len(matched_schemas) > 1:
@@ -134,21 +146,26 @@ def run_app_identifier(
 
     # ------------------------------------------------------------------
     # Log APP_DETECTED — always emitted on success
+    # V1 fix: construct LogEntry first, then pass to logger.log().
+    # logger.log() takes a LogEntry object — not keyword arguments.
     # ------------------------------------------------------------------
     latency = int((time.monotonic() - start_time) * 1000)
     context.latency_ms["app_identifier"] = latency
 
     logger.log(
-        stage=APP_DETECTED,
-        request_id=context.request_id,
-        user_id=context.user_id,
-        app_id=context.app_id,
-        app_schema_version=context.app_schema_version,
-        payload={
-            "app_id": context.app_id,
-            "schema_version": context.app_schema_version,
-            "match_method": match_method,
-        },
+        LogEntry(
+            stage=APP_DETECTED,
+            request_id=context.request_id,
+            user_id=context.user_id,
+            app_id=context.app_id,
+            app_schema_version=context.app_schema_version,
+            latency_ms=latency,
+            payload={
+                "app_id": context.app_id,
+                "schema_version": context.app_schema_version,
+                "match_method": match_method,
+            },
+        )
     )
 
     return context

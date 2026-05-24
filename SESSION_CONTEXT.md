@@ -12,15 +12,20 @@
 - 2.3 ✅ Request & Response Models (all tests passing)
 - 2.4 ✅ API Authentication (all tests passing)
 - 2.5 ✅ Context Validator (all tests passing)
+- 2.6 ✅ Query Endpoint Skeleton (user-facing)
 
 ## Current Sprint
-Sprint 2 — Core Models, Auth & App Identifier
+Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 
 ## Current Story
-2.5 — Context Validator ✅ COMPLETE
+2.6 — Query Endpoint Skeleton ✅ COMPLETE
+
+
+## Next Sprint
+Sprint 3 — LLM Layer
 
 ## Next Story
-2.6 — Query Endpoint Skeleton (user-facing)
+3.1 — LLM Base & Factory
 
 ## Files Built So Far
 
@@ -79,6 +84,7 @@ Sprint 2 — Core Models, Auth & App Identifier
                                     ← V1 in 2.5 (registered feedback_tool router:
                                             from src.api.tools.feedback_tool import router as feedback_tool_router
                                             app.include_router(feedback_tool_router, prefix="/v1/tools"))
+                                    ← V1. Registered query_router with prefix="/v1".
 
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
@@ -120,8 +126,22 @@ Sprint 2 — Core Models, Auth & App Identifier
                                         POST /v1/tools/feedback → HTTP 501 Not Implemented.
                                         Router registered in app.py with prefix="/v1/tools".
 
-- src/validator/app_identifier.py   ← new in 2.2
+- src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
+                                     Builds QueryContext, calls run_app_identifier(),
+                                     returns QueryResponse with app in meta.
+                                     sql=None until pipeline wired (Story 5.4).
+                                     Business errors → HTTP 200 with errors[].
+                                     Internal errors → HTTP 500.                                        
 
+- src/validator/app_identifier.py   ← new in 2.2
+                                     V1. Bug fix: logger.log() now receives
+                                     LogEntry(...) object, not keyword arguments.
+                                     StructuredLogger.log(entry: LogEntry) only
+                                     accepts a LogEntry — callers must construct it.
+                                    ← V2. Bug fix (reverted): get_all_schemas()
+                                     returns list[AppSchema] in the real codebase.
+                                     Reverted to list iteration pattern manually.
+                                     Final state: list-based iteration kept throughout.
 ### Tests
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
                                              ← updated in 1.6 (log_dir assertion fixed)
@@ -140,6 +160,10 @@ Sprint 2 — Core Models, Auth & App Identifier
 - tests/validator/test_app_identifier.py    ← new in 2.2
 - tests/api/test_models.py                  ← new in 2.3
 - tests/api/test_auth.py                    ← new in 2.4 (A1-A5, B1-B5, C1-C3, D1-D2)
+- tests/api/v1/test_query.py       ← NEW V0. 15 tests: A1-A3 auth, B1-B5 validation,
+                                     C1-C4 success, D1-D2 business errors, E1 internal.
+
+
 
 - tests/api/tools/test_context_validator.py ← new in 2.5
                                               V1 — fixed make_context helper and tests:
@@ -250,6 +274,22 @@ Sprint 2 — Core Models, Auth & App Identifier
 - feedback_tool.py Phase 3 placeholder — 501. Router registered in app.py.
 - Architecture document updated to version 1.4
 
+### Query Endpoint (2.6)
+- POST /v1/query uses require_client_key auth dependency
+- QueryContext built from QueryRequest at route entry
+- run_app_identifier() is the only pipeline stage called in this story
+- Business errors (APP_NOT_DETERMINED, MULTIPLE_APPS_MATCHED) → HTTP 200
+- Internal errors (schema_repo=None, unexpected) → HTTP 500
+- sql=None and total_tokens_used=0 until pipeline stages wired in later sprints
+- REQUEST_RECEIVED log emitted immediately on entry with caller="user"
+### Logger Tech Debt (flagged 2.6)
+- StructuredLogger has no Strategy pattern — switching log destination
+  requires a code change
+- Should be refactored to LogWriter ABC + factory + config key
+  (logging.writer: jsonl_file) before Phase 2
+- Tracked as tech debt — not blocking Phase 1
+
+
 ### Bug Fix (schema_repository.py — 2.4)
 - SchemaLoadError calls fixed from SchemaLoadError(code=..., message=...)
   to SchemaLoadError(message=...) — code auto-injected from constants
@@ -271,3 +311,6 @@ Sprint 2 — Core Models, Auth & App Identifier
    Template Method, Single Responsibility, Open/Closed)
 - Section 17 Phase 3: Foundry feedback endpoint added to scope
 - Change log: version 1.4 row added
+
+### Story 2.6 (Architecture v1.5)
+- Added sub-sectin 2.3 Tech Debt under section 2 Tehnical Decisions.

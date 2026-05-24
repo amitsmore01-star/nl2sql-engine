@@ -60,10 +60,10 @@ def _make_schema(app_id: str, app_name: str, synonyms: list[str], version: str =
 def _make_repo(schemas: list) -> MagicMock:
     """
     Builds a fake SchemaRepository whose get_all_schemas() returns
-    a dict of {appId: schema} built from the provided list.
+    a lis of {appId: schema} built from the provided list.
     """
     repo = MagicMock()
-    repo.get_all_schemas.return_value = {s.appId: s for s in schemas}
+    repo.get_all_schemas.return_value = schemas
     return repo
 
 
@@ -231,33 +231,30 @@ class TestLogging:
         logger.log.assert_called_once()
 
         # First positional arg to logger.log is the stage name
-        call_kwargs = logger.log.call_args
-        assert call_kwargs.kwargs["stage"] == APP_DETECTED
+        entry = logger.log.call_args.args[0] # LogEntry object is the first positional argument
+        assert entry.stage  == APP_DETECTED
 
     def test_D2_synonym_match_method_logged(self, abc_repo, logger):
         """D2 — match_method = 'synonym' when matched via synonym."""
-        ctx = _make_context("give me customers in ABC")
+        ctx = _make_context("give me customers in ABC office")
         run_app_identifier(ctx, abc_repo, logger)
-
-        payload = logger.log.call_args.kwargs["payload"]
-        assert payload["match_method"] == "synonym"
+        entry = logger.log.call_args.args[0]
+        assert entry.payload["match_method"] == "synonym"
 
     def test_D3_explicit_match_method_logged(self, abc_repo, logger):
         """D3 — match_method = 'explicit' when app_id was pre-set."""
         ctx = _make_context("give me customers", app_id="ABC_app")
         run_app_identifier(ctx, abc_repo, logger)
-
-        payload = logger.log.call_args.kwargs["payload"]
-        assert payload["match_method"] == "explicit"
+        entry = logger.log.call_args.args[0]
+        assert entry.payload["match_method"] == "explicit"
 
     def test_D1b_log_payload_contains_app_id_and_version(self, abc_repo, logger):
         """D1b — Log payload contains app_id and schema_version."""
         ctx = _make_context("give me customers in ABC")
         run_app_identifier(ctx, abc_repo, logger)
-
-        payload = logger.log.call_args.kwargs["payload"]
-        assert payload["app_id"] == "ABC_app"
-        assert payload["schema_version"] == "1.0"
+        entry = logger.log.call_args.args[0]
+        assert entry.payload["app_id"] == "ABC_app"
+        assert entry.payload["schema_version"] == "1.0"
 
     def test_D1c_latency_recorded_in_context(self, abc_repo, logger):
         """D1c — latency_ms['app_identifier'] is set after the call."""

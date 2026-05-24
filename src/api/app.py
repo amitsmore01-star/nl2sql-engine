@@ -1,5 +1,6 @@
 # src/api/app.py
 # V0 - Initial implementation
+# V1 - Story 2.6: Registered query router (POST /v1/query) under prefix="/v1".
 #
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
@@ -121,9 +122,18 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    # ----------------------------------------------------------------
     # Register routers
+    # ----------------------------------------------------------------
+
+    # Health endpoints — no prefix, no auth (GET /health, GET /ready)
     from src.api.health import router as health_router
     app.include_router(health_router)
+
+    # User-facing query endpoint — POST /v1/query
+    # prefix="/v1" means the route defined as "/query" becomes "/v1/query"
+    from src.api.v1.query import router as query_router
+    app.include_router(query_router, prefix="/v1")
 
     # Foundry tool routers
     # feedback_tool: POST /v1/tools/feedback — Phase 3 placeholder, returns 501
