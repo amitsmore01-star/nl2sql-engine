@@ -15,6 +15,8 @@
 - 2.6 ✅ Query Endpoint Skeleton (user-facing)
 - 3.1 ✅ LLM Base & Factory (all tests passing — 9 pass, 3 skipped)
 - 3.2 ✅ Mock + OpenAI Provider (all tests passing — 22 passed, 2 skipped)
+- 3.3 ✅ Azure OpenAI + Anthropic Provider 
+- 3.4 ✅ Schema Summary Builder (all tests passing)
 
 ## Completed Sprint 
 Sprint 1 —
@@ -25,10 +27,10 @@ Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 Sprint 3 — LLM Layer
 
 ## Current Story
-- 3.2 Mock + OpenAI Provider ✅ COMPLETE
+- 3.4 — Schema Summary Builder ✅ COMPLETE
 
 ## Next Story
-3.3 — Azure OpenAI + Anthropic Provider
+3.5 — Intent Extractor
 
 ## Files Built So Far
 
@@ -195,6 +197,21 @@ Sprint 3 — LLM Layer
                                       Model: gpt-4o-mini. URL: constant _OPENAI_API_URL.
                                       provider_name() returns "openai".
 
+- src/llm/azure_openai_provider.py  ← NEW V0. AzureOpenAIProvider.
+                                      Implements LLMProvider ABC. Synchronous — httpx.Client.
+
+- src/llm/anthropic_provider.py     ← NEW V0. AnthropicProvider.
+                                      Implements LLMProvider ABC. Synchronous — httpx.Client.
+
+- src/pipeline/schema_summary.py    ← NEW V0. build_schema_summary(schema: AppSchema) -> str.
+                                      Compresses AppSchema into plain-text for LLM Step 2.
+                                      Junction tables excluded entirely.
+                                      Table line: name + synonyms in brackets.
+                                      Column line: name only if no synonyms, name [synonyms]
+                                      if synonyms defined.
+                                      Phase 2 note: is_identifier and is_default_text flags
+                                      not included in summary — flagged for Phase 2 if LLM
+                                      mapping quality needs improvement.
 
 ### Tests
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
@@ -246,6 +263,8 @@ Sprint 3 — LLM Layer
                                       C5 skipped — AnthropicProvider not yet built (Story 3.3)
                                       ← V1. Un-skipped C3 (OpenAIProvider now built).
                                       _make_settings() updated to include openai_api_key param.
+                                      ← V2. Un-skipped C4 + C5.
+                                              _make_settings() updated with all Azure + Anthropic fields.
                                       
 - tests/llm/test_openai_provider.py ← NEW V0. 8 tests: D1-D8.
                                       Uses respx to mock httpx at transport layer.
@@ -254,7 +273,10 @@ Sprint 3 — LLM Layer
                                       _openai_response() helper builds OpenAI-shaped response body.
                                       retry_backoff_seconds=0 in retry tests — no sleep in tests.
 
-
+- tests/llm/test_azure_openai_provider.py  ← NEW V0. 11 tests: E1-E11.
+- tests/llm/test_anthropic_provider.py     ← NEW V0. 8 tests: F1-F8.
+ 
+- tests/pipeline/test_schema_summary.py  ← NEW V0. 10 tests: A1-A6, B1, C1-C4.           
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -391,6 +413,31 @@ Sprint 3 — LLM Layer
   so URL is never duplicated between source and test files
 - Missing openai_api_key raises ValueError at construction — fails fast before any API call
 - Factory _make_settings() helper updated to carry openai_api_key for C3 test
+
+### Azure OpenAI + Anthropic Provider (3.3)
+- AzureOpenAIProvider URL built at construction time from 3 parts:
+    endpoint + deployment_name + api_version. Stored as self._url — one build, reused per call.
+- Azure auth uses api-key header — not Bearer token like OpenAI.
+- All 4 Azure credentials validated at construction — single ValueError lists all missing fields.
+- AnthropicProvider model string is module-level constant _MODEL = "claude-sonnet-4-5".
+    Flagged as tech debt — future story should move to settings.llm.anthropic_model.
+- Anthropic API shape differs from OpenAI — system is top-level, response at content[0].text.
+- Both providers follow identical retry loop pattern as OpenAIProvider.
+- test_factory.py _make_settings() now carries all provider credentials — safe to call
+    for any provider without triggering missing-credential ValueError.
+
+### Schema Summary Builder (3.4)
+- build_schema_summary() is a helper — not a pipeline stage. Called inside
+  run_schema_mapper() (Story 4.1), not directly by the orchestrator.
+- Junction tables excluded from summary — LLM must never propose them.
+- Table format: table: Major.Customer [synonym1, synonym2]
+- Column format with synonyms: CustomerCID [Customer id, Customer cid]
+- Column format without synonyms: CustomerID (plain name, no brackets)
+- Table with no synonyms: table: Major.SomeTable [] (empty brackets — Option A)
+- Column types, business rules, versioning config excluded from summary.
+- is_identifier and is_default_text flags NOT included — flagged for Phase 2.
+- Token budget: output under 4,800 characters (~1,200 tokens at ~4 chars/token).
+- Output is deterministic — same input always produces same output.
 
 ### Bug Fix (schema_repository.py — 2.4)
 - SchemaLoadError calls fixed from SchemaLoadError(code=..., message=...)

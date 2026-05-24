@@ -1,6 +1,9 @@
 # tests/llm/test_factory.py
 # V0 - Initial implementation
 # V1 - Un-skipped C3 (OpenAIProvider now built — Story 3.2)
+# V2 - Un-skipped C4 (AzureOpenAIProvider now built — Story 3.3)
+#      Un-skipped C5 (AnthropicProvider now built — Story 3.3)
+#      _make_settings() updated to carry azure + anthropic credential fields
 #
 # Tests for src/llm/factory.py — LLMProviderFactory.
 #
@@ -8,8 +11,8 @@
 #   C1 — provider=mock → returns MockLLMProvider instance
 #   C2 — provider=mock → result is instance of LLMProvider
 #   C3 — provider=openai → returns OpenAIProvider instance
-#   C4 — provider=azure_openai → skipped, not yet built (Story 3.3)
-#   C5 — provider=anthropic → skipped, not yet built (Story 3.3)
+#   C4 — provider=azure_openai → returns AzureOpenAIProvider instance
+#   C5 — provider=anthropic → returns AnthropicProvider instance
 #   C6 — Unknown provider string → raises UnknownProviderError
 #   C7 — UnknownProviderError.code matches UNKNOWN_PROVIDER constant
 
@@ -19,6 +22,8 @@ from src.llm.factory import LLMProviderFactory
 from src.llm.base import LLMProvider
 from src.llm.mock_provider import MockLLMProvider
 from src.llm.openai_provider import OpenAIProvider
+from src.llm.azure_openai_provider import AzureOpenAIProvider
+from src.llm.anthropic_provider import AnthropicProvider
 from src.core.exceptions import UnknownProviderError
 from src.core.constants import UNKNOWN_PROVIDER
 
@@ -27,10 +32,19 @@ from src.core.constants import UNKNOWN_PROVIDER
 # Fixture — settings object with llm.provider overridden per test
 # ---------------------------------------------------------------------------
 
-def _make_settings(provider: str, openai_api_key: str | None = "test-key"):
+def _make_settings(
+    provider: str,
+    openai_api_key: str | None = "test-openai-key",
+    azure_openai_api_key: str | None = "test-azure-key",
+    azure_openai_endpoint: str | None = "https://test.openai.azure.com",
+    azure_openai_deployment_name: str | None = "test-deployment",
+    azure_openai_api_version: str | None = "2024-02-01",
+    anthropic_api_key: str | None = "test-anthropic-key",
+):
     """
     Build a minimal Settings-like object with llm.provider set.
     Uses a simple namespace object — avoids loading real YAML/env in tests.
+    Carries all provider credentials so each provider's construction succeeds.
     """
     class _LLM:
         pass
@@ -48,6 +62,11 @@ def _make_settings(provider: str, openai_api_key: str | None = "test-key"):
     settings = _FakeSettings()
     settings.llm = llm
     settings.openai_api_key = openai_api_key
+    settings.azure_openai_api_key = azure_openai_api_key
+    settings.azure_openai_endpoint = azure_openai_endpoint
+    settings.azure_openai_deployment_name = azure_openai_deployment_name
+    settings.azure_openai_api_version = azure_openai_api_version
+    settings.anthropic_api_key = anthropic_api_key
     return settings
 
 
@@ -72,19 +91,21 @@ class TestLLMProviderFactory:
 
     def test_c3_openai_provider_returns_openai_provider(self):
         """C3 — settings.llm.provider='openai' returns an OpenAIProvider instance."""
-        settings = _make_settings("openai", openai_api_key="test-openai-key")
+        settings = _make_settings("openai")
         result = LLMProviderFactory.create(settings)
         assert isinstance(result, OpenAIProvider)
 
-    @pytest.mark.skip(reason="AzureOpenAIProvider not yet built — Story 3.3")
-    def test_c4_azure_openai_provider(self):
-        """C4 — provider=azure_openai returns AzureOpenAIProvider instance."""
-        pass
+    def test_c4_azure_openai_provider_returns_azure_openai_provider(self):
+        """C4 — settings.llm.provider='azure_openai' returns an AzureOpenAIProvider instance."""
+        settings = _make_settings("azure_openai")
+        result = LLMProviderFactory.create(settings)
+        assert isinstance(result, AzureOpenAIProvider)
 
-    @pytest.mark.skip(reason="AnthropicProvider not yet built — Story 3.3")
-    def test_c5_anthropic_provider(self):
-        """C5 — provider=anthropic returns AnthropicProvider instance."""
-        pass
+    def test_c5_anthropic_provider_returns_anthropic_provider(self):
+        """C5 — settings.llm.provider='anthropic' returns an AnthropicProvider instance."""
+        settings = _make_settings("anthropic")
+        result = LLMProviderFactory.create(settings)
+        assert isinstance(result, AnthropicProvider)
 
     def test_c6_unknown_provider_raises_unknown_provider_error(self):
         """C6 — Unrecognised provider string raises UnknownProviderError."""
