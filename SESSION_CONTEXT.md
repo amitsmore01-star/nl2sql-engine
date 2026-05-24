@@ -13,25 +13,28 @@
 - 2.4 ✅ API Authentication (all tests passing)
 - 2.5 ✅ Context Validator (all tests passing)
 - 2.6 ✅ Query Endpoint Skeleton (user-facing)
+- 3.1 ✅ LLM Base & Factory (all tests passing — 9 pass, 3 skipped)
+- 3.2 ✅ Mock + OpenAI Provider (all tests passing — 22 passed, 2 skipped)
 
-## Current Sprint
+## Completed Sprint 
+Sprint 1 —
 Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 
-## Current Story
-2.6 — Query Endpoint Skeleton ✅ COMPLETE
 
-
-## Next Sprint
+## Current Sprint
 Sprint 3 — LLM Layer
 
+## Current Story
+- 3.2 Mock + OpenAI Provider ✅ COMPLETE
+
 ## Next Story
-3.1 — LLM Base & Factory
+3.3 — Azure OpenAI + Anthropic Provider
 
 ## Files Built So Far
 
 ### Project Root
 - main.py
-- requirements.txt
+- requirements.txt                  ← added respx==0.23.1
 - .env.example
 - .gitignore
 - README.md
@@ -63,9 +66,14 @@ Sprint 3 — LLM Layer
                                             Defaults to [] so all existing callers unaffected.
                                             Callers inspect error.missing_fields directly
                                             rather than parsing the message string.)
+                                    ← V3. Added UnknownProviderError class.
+                                      Raised by LLMProviderFactory when provider string
+                                      does not match any known provider.        
 
 - src/core/constants.py             ← new in 1.6 (log stage constants only)
                                     ← updated in 2.1 (all 12 error code constants added)
+                                    ← V2. Added UNKNOWN_PROVIDER error code constant.
+
 
 - src/core/models.py                ← new in 2.1 (QueryContext + StructuredQuery + sub-models)
                                     KEY CONSTRAINTS discovered in 2.5:
@@ -142,6 +150,52 @@ Sprint 3 — LLM Layer
                                      returns list[AppSchema] in the real codebase.
                                      Reverted to list iteration pattern manually.
                                      Final state: list-based iteration kept throughout.
+
+
+- src/llm/base.py                   ← NEW V0. LLMProvider ABC.
+                                      Two abstract methods: complete() and provider_name().
+                                      All providers are synchronous (def, not async def).
+                                      Pipeline stages call complete() only — never know
+                                      which provider is active.
+
+- src/llm/mock_provider.py          ← NEW V0. MockLLMProvider.
+                                      Used in ALL tests — zero real API calls.
+                                      Accepts responses: list[str] at construction time.
+                                      Each complete() call returns next string in order.
+                                      Supports two-step LLM pattern:
+                                        Call 1 → responses[0]  (intent JSON)
+                                        Call 2 → responses[1]  (mapping JSON)
+                                      Empty list → ValueError at construction.
+                                      More calls than responses → ValueError at call time.
+
+- src/llm/factory.py                ← NEW V0. LLMProviderFactory.
+                                      Static method: LLMProviderFactory.create(settings)
+                                      Reads settings.llm.provider to select provider.
+                                      Mock imported at module level — always available.
+                                      Real providers (openai, azure_openai, anthropic)
+                                      imported lazily inside create() — missing files
+                                      do not break imports during early development.
+                                      Unknown provider → UnknownProviderError.
+
+- src/llm/openai_provider.py        ← NEW V0. OpenAIProvider.
+                                      Implements LLMProvider ABC.
+                                      Synchronous — httpx.Client (blocking). No async.
+                                      Reads from settings:
+                                        settings.openai_api_key       — OPENAI_API_KEY from .env
+                                        settings.llm.timeout_seconds  — per-call timeout
+                                        settings.llm.retry_max        — max attempts
+                                        settings.llm.retry_backoff_seconds — base backoff
+                                        settings.llm.max_tokens       — max response tokens
+                                      Raises ValueError at construction if openai_api_key missing.
+                                      Retry loop: up to retry_max attempts, exponential backoff.
+                                      Retries on: httpx.TimeoutException, httpx.HTTPStatusError.
+                                      All retries exhausted → raises LLMOutputParseError.
+                                      _call() separated from complete() — HTTP layer isolated
+                                      for clean retry loop and testability.
+                                      Model: gpt-4o-mini. URL: constant _OPENAI_API_URL.
+                                      provider_name() returns "openai".
+
+
 ### Tests
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
                                              ← updated in 1.6 (log_dir assertion fixed)
@@ -177,6 +231,30 @@ Sprint 3 — LLM Layer
 - tests/api/tools/test_feedback_tool.py     ← new in 2.5
                                               2 tests: 501 returned, message mentions Phase 3.
                                               Requires feedback_tool router registered in app.py.
+
+
+- tests/llm/test_base.py            ← NEW V0. 3 tests: A1-A3.
+                                      Tests LLMProvider ABC contract —
+                                      missing abstract methods raise TypeError.
+
+- tests/llm/test_mock_provider.py   ← NEW V0. 6 tests: B1-B6.
+                                      Tests MockLLMProvider — response ordering,
+                                      isinstance check, empty list, exhausted responses.
+
+- tests/llm/test_factory.py         ← NEW V0. 9 tests: C1-C7 (C3, C4, C5 skipped).
+                                      C4 skipped — AzureOpenAIProvider not yet built (Story 3.3)
+                                      C5 skipped — AnthropicProvider not yet built (Story 3.3)
+                                      ← V1. Un-skipped C3 (OpenAIProvider now built).
+                                      _make_settings() updated to include openai_api_key param.
+                                      
+- tests/llm/test_openai_provider.py ← NEW V0. 8 tests: D1-D8.
+                                      Uses respx to mock httpx at transport layer.
+                                      Zero real API calls.
+                                      _make_settings() helper builds fake settings object.
+                                      _openai_response() helper builds OpenAI-shaped response body.
+                                      retry_backoff_seconds=0 in retry tests — no sleep in tests.
+
+
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -289,6 +367,30 @@ Sprint 3 — LLM Layer
   (logging.writer: jsonl_file) before Phase 2
 - Tracked as tech debt — not blocking Phase 1
 
+### LLM Base & Factory (3.1)
+- LLMProvider is an ABC — cannot be instantiated directly
+- All providers are synchronous — def not async def. uvicorn handles concurrency.
+- MockLLMProvider uses a responses list — call order determines which response returned.
+  This directly maps to the two-step LLM pattern (intent → mapping).
+- Tests construct MockLLMProvider directly with specific responses.
+  Factory-created mock uses a single placeholder response ["mock_response"] —
+  only used when provider=mock in config, not in tests.
+- Real providers use lazy imports inside create() — provider files can be absent
+  during early stories without breaking any existing imports or tests.
+- C3, C4, C5 marked pytest.mark.skip — will be activated in Stories 3.2 and 3.3
+  as each provider is built.
+- UnknownProviderError added to exceptions.py (V3) and UNKNOWN_PROVIDER
+  added to constants.py (V2).
+
+### OpenAI Provider (3.2)
+- httpx.Client used for all HTTP calls — sync, consistent with architecture decision 44
+- respx==0.23.1 added to requirements.txt — standard mock library for httpx
+- _call() separated from complete() — HTTP layer isolated, retry loop stays clean
+- retry_backoff_seconds set to 0 in tests — prevents time.sleep() from slowing test suite
+- _OPENAI_API_URL and _MODEL defined as module-level constants — imported in tests
+  so URL is never duplicated between source and test files
+- Missing openai_api_key raises ValueError at construction — fails fast before any API call
+- Factory _make_settings() helper updated to carry openai_api_key for C3 test
 
 ### Bug Fix (schema_repository.py — 2.4)
 - SchemaLoadError calls fixed from SchemaLoadError(code=..., message=...)

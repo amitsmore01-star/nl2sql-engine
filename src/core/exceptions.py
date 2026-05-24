@@ -2,6 +2,7 @@
 # V0 - Initial implementation
 # V1 - Story 2.1: Added 11 exception subclasses total.
 # V2 - Story 2.5: MissingContextFieldsError extended with missing_fields: list[str] attribute.
+# V3 - Story 3.1: Added UnknownProviderError for unrecognised LLM provider strings.
 # All custom exceptions for the nl2sql-engine.
 # Every exception carries a machine-readable code and a human-readable message.
 # Codes must match the constants defined in src/core/constants.py exactly.
@@ -19,6 +20,7 @@ from src.core.constants import (
     UNAUTHORIZED,
     SCHEMA_LOAD_ERROR,
     INTERNAL_ERROR,
+    UNKNOWN_PROVIDER,
 )
  
  
@@ -179,4 +181,18 @@ class InternalError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=INTERNAL_ERROR, message=message)
+
+
+# ---------------------------------------------------------------------------
+# LLM Provider Errors
+# ---------------------------------------------------------------------------
+
+class UnknownProviderError(NL2SQLBaseError):
+    """
+    Raised by LLMProviderFactory when the configured provider string does not
+    match any known provider.
+    Example: LLM_PROVIDER=typo → UnknownProviderError.
+    """
+    def __init__(self, message: str) -> None:
+        super().__init__(code=UNKNOWN_PROVIDER, message=message)
 

@@ -2,6 +2,7 @@
 # V0 - Initial implementation
 # V1 - Story 2.1: Added 12 error code constants total.
 #      No numeric limit constants — all limits live in settings YAML only.
+# V2 - Story 3.1: Added UNKNOWN_PROVIDER error code constant.
 #
 # Shared constants for the nl2sql-engine.
 # Story 1.6: Log stage constants.
@@ -52,3 +53,6 @@ SCHEMA_LOAD_ERROR         = "SCHEMA_LOAD_ERROR"         # Schema file missing or
  
 # Server error — HTTP 500
 INTERNAL_ERROR            = "INTERNAL_ERROR"            # Unhandled exception
+
+# LLM provider error — raised at startup or factory creation time
+UNKNOWN_PROVIDER          = "UNKNOWN_PROVIDER"          # Provider string not recognised
