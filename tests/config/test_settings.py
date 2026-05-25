@@ -1,5 +1,9 @@
 # tests/config/test_settings.py
 # V0 - Initial implementation
+# V1 - Updated CLIENT_API_KEY + FOUNDRY_API_KEY (Story 2.4)
+# V2 - Replaced step1_token_target + step2_token_target with nl_to_ir_strategy
+#      and prompt_example_set throughout (Story 3.6, architecture v1.6)
+#      Added Scenario P — prompts.yaml loading tests
 #
 # Tests for src/config/settings.py
 # All 9 agreed scenarios covered.
@@ -192,7 +196,6 @@ class TestEnvSecretsLoad:
         assert settings.logging.log_dir == "logs"
 
 
-
 # ===========================================================================
 # Scenario 5 — .env LLM_PROVIDER overrides YAML
 # ===========================================================================
@@ -325,7 +328,11 @@ class TestSingleLoadPoint:
 class TestUnknownKeyInYaml:
 
     def _write_valid_base(self, tmp_path: Path) -> None:
-        """Helper — writes a valid settings.base.yaml to tmp_path."""
+        """
+        Helper — writes a valid settings.base.yaml to tmp_path.
+        Kept in sync with the real settings.base.yaml structure (V2).
+        Uses nl_to_ir_strategy + prompt_example_set (not step1/step2 token targets).
+        """
         (tmp_path / "settings.base.yaml").write_text(
             "app:\n"
             "  name: nl2sql-engine\n"
@@ -340,16 +347,42 @@ class TestUnknownKeyInYaml:
             "  timeout_seconds: 30\n"
             "  retry_max: 3\n"
             "  retry_backoff_seconds: 2\n"
-            "  step1_token_target: 1000\n"
-            "  step2_token_target: 1200\n"
+            "  nl_to_ir_strategy: single_call\n"
+            "  prompt_example_set: default\n"
             "sql:\n"
-            "  default_top_rows: 10000\n"
-            "  max_nl_query_length: 1000\n"
+            "  default_top_rows: 0\n"
+            "  max_nl_query_length: 0\n"
             "logging:\n"
             "  level: INFO\n"
             "  rotation: daily\n"
             "  log_dir: logs\n"
             "  log_archive_dir: logs/archive\n",
+            encoding="utf-8",
+        )
+        # These tests use tmp_path which has no prompts.yaml — we write a minimal one
+        # so load_settings() does not fail on the missing prompts file check.
+        (tmp_path / "prompts.yaml").write_text(
+            "nl_to_structured_query:\n"
+            "  role_description: 'You are a test assistant.'\n"
+            "  output_structure: 'Return JSON.'\n"
+            "  rules:\n"
+            "    output: ['Output rule']\n"
+            "    tables: ['Tables rule']\n"
+            "    columns: ['Columns rule']\n"
+            "    filters: ['Filters rule']\n"
+            "    source: ['Source rule']\n"
+            "    limit: ['Limit rule']\n"
+            "    aggregation: ['Aggregation rule']\n"
+            "    sort: ['Sort rule']\n"
+            "  example_sets:\n"
+            "    default:\n"
+            "      - example_one\n"
+            "  examples:\n"
+            "    example_one:\n"
+            "      schema: 'table: Major.Customer'\n"
+            "      query: 'get customers'\n"
+            "      correct: '{\"tables\": [], \"columns\": [], \"filters\": [], \"limit\": null, \"aggregation\": null, \"sort\": []}'\n"
+            "  user_template: 'Schema summary:\\n<SCHEMA_SUMMARY>\\n\\nUser query:\\n<USER_QUERY>'\n",
             encoding="utf-8",
         )
 
@@ -403,4 +436,105 @@ class TestUnknownKeyInYaml:
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
         with pytest.raises(ValueError, match="rogue_key"):
+            load_settings(tmp_path)
+
+
+# ===========================================================================
+# Scenario P — prompts.yaml loading
+# ===========================================================================
+class TestPromptsYamlLoading:
+
+    def test_P1_settings_prompts_is_not_none(self, monkeypatch):
+        """P1 — settings.prompts is populated after load_settings()."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert s.prompts is not None
+
+    def test_P2_prompts_has_role_description(self, monkeypatch):
+        """P2 — settings.prompts.role_description is a non-empty string."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert isinstance(s.prompts.role_description, str)
+        assert len(s.prompts.role_description.strip()) > 0
+
+    def test_P3_prompts_has_rules_with_groups(self, monkeypatch):
+        """P3 — settings.prompts.rules has at least one non-empty rule group."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        rules = s.prompts.rules
+        assert rules is not None
+        # At least one group must have at least one rule
+        rules_dict = rules.model_dump()
+        assert any(len(v) > 0 for v in rules_dict.values())
+
+    def test_P4_prompts_has_default_example_set(self, monkeypatch):
+        """P4 — settings.prompts.example_sets has a 'default' key."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert "default" in s.prompts.example_sets
+        assert len(s.prompts.example_sets["default"]) > 0
+
+    def test_P5_prompts_has_at_least_one_example(self, monkeypatch):
+        """P5 — settings.prompts.examples has at least one entry."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert len(s.prompts.examples) > 0
+
+    def test_P6_user_template_has_required_placeholders(self, monkeypatch):
+        """P6 — user_template contains both <SCHEMA_SUMMARY> and <USER_QUERY>."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert "<SCHEMA_SUMMARY>" in s.prompts.user_template
+        assert "<USER_QUERY>" in s.prompts.user_template
+
+    def test_P7_nl_to_ir_strategy_is_single_call(self, monkeypatch):
+        """P7 — settings.llm.nl_to_ir_strategy is 'single_call' from base YAML."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert s.llm.nl_to_ir_strategy == "single_call"
+
+    def test_P8_prompt_example_set_is_default(self, monkeypatch):
+        """P8 — settings.llm.prompt_example_set is 'default' from base YAML."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert s.llm.prompt_example_set == "default"
+
+    def test_P9_missing_prompts_yaml_raises_value_error(self, monkeypatch, tmp_path):
+        """P9 — Missing prompts.yaml causes load_settings() to raise ValueError."""
+        # Write a valid settings.base.yaml but NO prompts.yaml
+        (tmp_path / "settings.base.yaml").write_text(
+            "app:\n"
+            "  name: nl2sql-engine\n"
+            "  version: '1.0'\n"
+            "  schema_dir: schemas\n"
+            "api:\n"
+            "  port: 8000\n"
+            "  prefix: /v1\n"
+            "llm:\n"
+            "  provider: mock\n"
+            "  max_tokens: 1000\n"
+            "  timeout_seconds: 30\n"
+            "  retry_max: 3\n"
+            "  retry_backoff_seconds: 2\n"
+            "  nl_to_ir_strategy: single_call\n"
+            "  prompt_example_set: default\n"
+            "sql:\n"
+            "  default_top_rows: 0\n"
+            "  max_nl_query_length: 0\n"
+            "logging:\n"
+            "  level: INFO\n"
+            "  rotation: daily\n"
+            "  log_dir: logs\n"
+            "  log_archive_dir: logs/archive\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "settings.dev.yaml").write_text(
+            "logging:\n  level: DEBUG\n", encoding="utf-8"
+        )
+        # No prompts.yaml written — intentional
+
+        monkeypatch.setenv("ENV", "dev")
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+
+        with pytest.raises(ValueError, match="prompts.yaml"):
             load_settings(tmp_path)

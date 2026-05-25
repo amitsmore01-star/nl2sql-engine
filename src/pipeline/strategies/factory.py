@@ -1,5 +1,6 @@
 # src/pipeline/strategies/factory.py
 # V0 - Initial implementation
+# V1 - Registered SingleCallStrategy (Story 3.6). Registry was empty in V0.
 #
 # Factory for NLToIRStrategy — mirrors LLMProviderFactory in src/llm/factory.py.
 #
@@ -55,7 +56,7 @@ class NLToIRStrategyFactory:
             from src.pipeline.strategies.single_call import SingleCallStrategy
             _strategies["single_call"] = SingleCallStrategy
         except ImportError:
-            pass  # SingleCallStrategy not built yet (Story 3.6) — skip registration
+            pass
 
         strategy_name: str = settings.llm.nl_to_ir_strategy
         strategy_class = _strategies.get(strategy_name)

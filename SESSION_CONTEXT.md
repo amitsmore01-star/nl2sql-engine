@@ -27,10 +27,10 @@ Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 Sprint 3 — LLM Layer
 
 ## Current Story
-3.5 — NL-to-IR Strategy Scaffold + QueryContext Refactor ✅ COMPLETE
+3.6 — Single-Call Strategy + Prompt Assembly ✅ COMPLETE
 
 ## Next Story
-3.6 — Single-Call Strategy + Prompt Assembly
+3.7 — Partial Pipeline Wire-up + Intent Guard
 
 ## Files Built So Far
 
@@ -44,11 +44,14 @@ Sprint 3 — LLM Layer
 ### Config
 - config/settings.base.yaml         ← updated in 1.2 (added llm.provider to base)
                                     ← updated in 1.6 (log_dir, log_archive_dir moved under logging:)
-                                    ← TO UPDATE in Story 3.6: add nl_to_ir_strategy and
-                                       prompt_example_set under llm: section
+                                    ← V2. Removed step1_token_target + step2_token_target.
+                                      Added nl_to_ir_strategy: single_call and
+                                      prompt_example_set: default under llm: section.
 - config/settings.dev.yaml
 - config/settings.prod.yaml
-- config/prompts.yaml               ← TO CREATE in Story 3.6 (sectioned prompt definitions)
+- config/prompts.yaml               ← NEW V0. Sectioned prompt definitions.Three examples: hierarchy_with_filter,
+                                      filter_only_customer, aggregation_with_limit.example_sets: default (3 examples) + minimal (1).
+                                      user_template contains <SCHEMA_SUMMARY> + <USER_QUERY>.
 
 ### Schemas
 - schemas/ABC_app.json
@@ -59,10 +62,17 @@ Sprint 3 — LLM Layer
                                     ← V1 in 2.4 (replaced api_key with client_api_key + foundry_api_key,
                                             added prod validator, fixed log_dir/log_archive_dir into
                                             merged["logging"] section)
-                                    ← TO UPDATE in Story 3.6: V2 — load prompts.yaml, add
-                                       nl_to_ir_strategy + prompt_example_set to LLMSettings
+                                    ← V2. Replaced step1_token_target + step2_token_target
+                                              with nl_to_ir_strategy + prompt_example_set in
+                                              LLMSettings. Added _load_prompts() and _remap_example_schema_keys() helpers. prompts.yaml
+                                              loaded independently and attached as settings.prompts.Service refuses to start if prompts.yaml missing.
 
-- src/config/prompts_models.py      ← TO CREATE in Story 3.6 (Pydantic models for prompts.yaml)
+- src/config/prompts_models.py      ← NEW V0/V1. Pydantic models for prompts.yaml structure.
+                                      PromptExample, PromptRules, StrategyPromptSpec,
+                                      PromptsConfig. schema_ field (not schema) to avoid
+                                      Pydantic reserved name collision.
+                                      V1: Fixed duplicate model_config + inner Config class
+                                      on PromptExample — Pydantic v2 rejects both together.
 
 - src/schema/schema_models.py       ← new in 1.3 (43 tests, all passing)
 - src/schema/schema_repository.py   ← V1 in 2.4 (removed stale code= kwarg from all SchemaLoadError calls)
@@ -223,21 +233,39 @@ Sprint 3 — LLM Layer
                                       Token budget: under 4,800 characters (~1,200 tokens).
                                       Output is deterministic — same input, same output.
 
-- src/pipeline/strategies/__init__.py  ← NEW V0. Story 3.5
-- src/pipeline/strategies/base.py      ← NEW V0. Story 3.5 NLToIRStrategy ABC. Two abstract methods: execute() and strategy_name().
+- src/pipeline/strategies/__init__.py ← NEW V0. Story 3.5
+- src/pipeline/strategies/base.py     ← NEW V0. Story 3.5 NLToIRStrategy ABC. Two abstract methods: execute() and strategy_name().
                                           Mirrors LLMProvider ABC pattern exactly.
-- src/pipeline/strategies/factory.py   ← NEW V0. NLToIRStrategyFactory. Lazy imports SingleCallStrategy (not yet built).
+- src/pipeline/strategies/factory.py  ← NEW V0. NLToIRStrategyFactory. Lazy imports SingleCallStrategy (not yet built).
                                           Unknown strategy → UnknownStrategyError. registered_strategies() helper for health checks.
-- src/pipeline/strategies/single_call.py ← TO CREATE in Story 3.6
-- src/pipeline/prompt_builder.py        ← TO CREATE in Story 3.6
+                                      ← V1. Registered SingleCallStrategy. Registry was empty in V0.
+- src/pipeline/strategies/single_call.py← NEW V0. SingleCallStrategy.
+                                            System prompt built once at construction.
+                                            User prompt rendered per request.
+                                            One LLM call per execute(). Parses simplified
+                                            IR JSON. Writes to context.llm_output.
+                                            Sets context.status = "success" on clean exit.
+- src/pipeline/prompt_builder.py        ← NEW V0. PromptBuilder — three static methods:
+                                          validate(), build_system_prompt(), render_user_prompt().
+                                          Fixed rule assembly order: output → tables → columns →
+                                          filters → source → limit → aggregation → sort.
+                                          validate() checks: broken example set references,
+                                          missing placeholders, incorrect/why_wrong pairing.
 - src/pipeline/intent_guard.py          ← TO CREATE in Story 3.7
 - src/pipeline/orchestrator.py          ← TO CREATE in Story 3.7 (V0 — partial)
                                         ← TO UPDATE in Story 5.4 (V1 — final)
 
 ### Tests
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
-                                             ← updated in 1.6 (log_dir assertion fixed)
-                                             ← TO UPDATE in Story 3.6: V2 — test prompts.yaml loading
+                                            ← updated in 1.6 (log_dir assertion fixed)
+                                            ← V2. Replaced step1/step2 token target refs.
+                                              Updated _write_valid_base() helper to use
+                                              nl_to_ir_strategy + prompt_example_set.
+                                              Helper now also writes minimal prompts.yaml
+                                              to tmp_path (Scenario 9 tests use tmp_path
+                                              which has no real prompts.yaml).
+                                              Added Scenario P (P1-P9): prompts.yaml loading.
+
 - tests/schema/test_schema_models.py        ← new in 1.3 (43 tests)
 - tests/schema/test_schema_repository.py
 - tests/schema/test_schema_validator.py
@@ -278,8 +306,8 @@ Sprint 3 — LLM Layer
 - tests/pipeline/strategies/__init__.py       ← NEW V0. in Story 3.5
 - tests/pipeline/strategies/test_base.py      ← NEW V0. in Story 3.5 5 tests: A1-A4 + A2 extended.
 - tests/pipeline/strategies/test_factory.py   ← NEW V0. in Story 3.5 5 tests: B1-B4 + B1 extended.
-- tests/pipeline/test_prompt_builder.py       ← TO CREATE in Story 3.6
-- tests/pipeline/strategies/test_single_call.py ← TO CREATE in Story 3.6
+- tests/pipeline/test_prompt_builder.py       ← NEW V0. 16 tests: A1, B1-B5, C1-C5, D1-D3.
+- tests/pipeline/strategies/test_single_call.py← NEW V0. 13 tests: A1-A3, B1-B7, C1-C3.
 - tests/pipeline/test_intent_guard.py         ← TO CREATE in Story 3.7
 - tests/pipeline/test_orchestrator.py         ← TO CREATE in Story 3.7
 
@@ -482,10 +510,36 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - UnknownStrategyError + UNKNOWN_STRATEGY error code added ✅
 - context_validator.py refactored — SchemMapperRequirements deleted, IntentExtractorRequirements renamed to NLToIRRequirements, ValidatorRequirements updated to require llm_output ✅
 
+### Single-Call Strategy + Prompt Assembly (3.6)
+- prompts.yaml is the single source of truth for all prompt text — nothing hardcoded in code
+- YAML key 'schema' inside each example remapped to 'schema_' by _remap_example_schema_keys()
+  in settings.py before Pydantic sees it — avoids collision with Pydantic's reserved attribute
+- PromptExample uses model_config = ConfigDict(extra="forbid", populate_by_name=True) only —
+  no inner class Config. Pydantic v2 rejects both model_config and class Config on same class.
+- settings.prompts typed as Optional[Any] on Settings — Pydantic does not re-validate it.
+  PromptsConfig already validated structure during _load_prompts().
+- System prompt built once at SingleCallStrategy construction — reused across all requests.
+  User prompt rendered per request (schema summary + user query substitution only).
+- _parse_ir() strips markdown code fences before json.loads() — defensive against LLM wrapping
+- context.status = "success" must be explicitly set by each stage on clean exit —
+  QueryContext defaults to "pending", nothing sets it automatically.
+- _REQUIRED_IR_KEYS = {tables, columns, filters, limit, aggregation, sort} —
+  all six must be present in LLM response or LLMOutputParseError is raised.
+- aggregation and sort captured in IR but NOT executed by SQL builder in Phase 1 — Phase 2.
+- factory.py V1: SingleCallStrategy now registered. registered_strategies() returns
+  ["single_call"]. Was empty list in V0.
+
 ### Bug Fix (schema_repository.py — 2.4)
 - SchemaLoadError calls fixed from SchemaLoadError(code=..., message=...)
   to SchemaLoadError(message=...) — code auto-injected from constants
+### Bug Fix (prompts_models.py — 3.6)
+- PromptExample had duplicate model_config declarations and an inner class Config block
+  (Pydantic v1 style). Pydantic v2 raises PydanticUserError: "Config" and "model_config"
+  cannot be used together. Fixed in V1 — single model_config = ConfigDict(...) only.
 
+### Bug Fix (single_call.py — 3.6)
+- context.status was never set to "success" after clean execute(). QueryContext defaults
+  to "pending". Added context.status = "success" before the log emit and return.
 ---
 
 ## Architecture Document Updates Made

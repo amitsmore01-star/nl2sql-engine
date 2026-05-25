@@ -3,6 +3,10 @@
 # V1 - Replaced api_key with client_api_key + foundry_api_key (Story 2.4)
 #      Added prod-only validator for missing keys
 #      Fixed log_dir / log_archive_dir to inject into merged["logging"] section
+# V2 - Replaced step1_token_target + step2_token_target with nl_to_ir_strategy
+#      and prompt_example_set in LLMSettings (Story 3.6, architecture v1.6)
+#      Added prompts.yaml loading — attached as settings.prompts (PromptSpec)
+#      Service refuses to start if prompts.yaml is missing or structurally invalid
 #
 # Single source of truth for all configuration.
 # This is the ONLY file that reads YAML files or environment variables.
@@ -13,15 +17,21 @@
 #   + settings.{ENV}.yaml   (ENV from .env — dev | prod)
 #   + .env                  (secrets override everything)
 #   = final Settings object
+#
+# prompts.yaml loads independently — not part of the settings merge stack.
+# It is validated structurally by Pydantic (PromptsConfig) and attached
+# as settings.prompts. Semantic validation runs later in PromptBuilder.validate().
 
 import os
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError, model_validator
 from pydantic import ConfigDict
+
+from src.config.prompts_models import PromptsConfig, StrategyPromptSpec
 
 # ---------------------------------------------------------------------------
 # Load .env once at import time — secrets populate os.environ
@@ -49,6 +59,13 @@ class ApiSettings(BaseModel):
 
 
 class LLMSettings(BaseModel):
+    """
+    LLM configuration.
+
+    nl_to_ir_strategy:   which NLToIRStrategy to use (default: single_call)
+    prompt_example_set:  which named example set from prompts.yaml to use
+                         (default: default)
+    """
     model_config = ConfigDict(extra="forbid")
 
     provider: str
@@ -56,8 +73,8 @@ class LLMSettings(BaseModel):
     timeout_seconds: int
     retry_max: int
     retry_backoff_seconds: int
-    step1_token_target: int
-    step2_token_target: int
+    nl_to_ir_strategy: str
+    prompt_example_set: str
 
 
 class SQLSettings(BaseModel):
@@ -105,6 +122,12 @@ class Settings(BaseModel):
     azure_openai_deployment_name: Optional[str] = None
     azure_openai_api_version: Optional[str] = None
     anthropic_api_key: Optional[str] = None
+
+    # Prompts — loaded separately from prompts.yaml.
+    # Attached after Pydantic validation via load_settings().
+    # Type is Any here so Pydantic does not try to validate it again —
+    # PromptsConfig already validated it during load.
+    prompts: Optional[Any] = None
 
     @model_validator(mode="after")
     def llm_provider_env_override(self) -> "Settings":
@@ -165,6 +188,62 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
+def _load_prompts(config_dir: Path) -> StrategyPromptSpec:
+    """
+    Load and structurally validate config/prompts.yaml.
+
+    Returns the nl_to_structured_query spec — the only strategy in Phase 1.
+
+    Raises:
+        ValueError: if prompts.yaml is missing, unparseable, or structurally invalid.
+
+    Note: semantic validation (broken example references, missing placeholders)
+    runs later in PromptBuilder.validate() at strategy construction time.
+    """
+    prompts_path = config_dir / "prompts.yaml"
+    if not prompts_path.exists():
+        raise ValueError(
+            f"prompts.yaml not found at {prompts_path}. "
+            "This file is required — the service cannot start without it."
+        )
+
+    with open(prompts_path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+
+    # Remap 'schema' key in each example to 'schema_' for Pydantic
+    # YAML uses 'schema' but Pydantic model field is 'schema_' to avoid
+    # collision with Pydantic's reserved 'schema' attribute.
+    _remap_example_schema_keys(raw)
+
+    try:
+        config = PromptsConfig(**raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"prompts.yaml structure is invalid:\n{exc}"
+        ) from exc
+
+    return config.nl_to_structured_query
+
+
+def _remap_example_schema_keys(raw: dict) -> None:
+    """
+    Mutate raw dict in place: rename 'schema' → 'schema_' inside every
+    example block so Pydantic's PromptExample model can parse it.
+
+    YAML writers use 'schema' (natural key name).
+    Pydantic field is 'schema_' (avoids reserved name collision).
+    """
+    for strategy_key, strategy_val in raw.items():
+        if not isinstance(strategy_val, dict):
+            continue
+        examples = strategy_val.get("examples", {})
+        if not isinstance(examples, dict):
+            continue
+        for example_name, example_val in examples.items():
+            if isinstance(example_val, dict) and "schema" in example_val:
+                example_val["schema_"] = example_val.pop("schema")
+
+
 # ---------------------------------------------------------------------------
 # Public loader — called once at startup
 # ---------------------------------------------------------------------------
@@ -178,12 +257,13 @@ def load_settings(config_dir: str | Path | None = None) -> Settings:
                     <project_root>/config relative to this file.
 
     Returns:
-        Validated Settings object.
+        Validated Settings object with settings.prompts populated.
 
     Raises:
         ValueError: If ENV is missing or unknown.
         ValueError: If prod and CLIENT_API_KEY or FOUNDRY_API_KEY is missing.
         ValueError: If merged config contains unknown keys or wrong types.
+        ValueError: If prompts.yaml is missing or structurally invalid.
     """
     # Resolve config directory
     if config_dir is None:
@@ -218,9 +298,6 @@ def load_settings(config_dir: str | Path | None = None) -> Settings:
     merged["foundry_api_key"] = foundry_api_key
 
     # --- 5. Inject logging overrides into the nested logging section ---
-    # LOG_DIR and LOG_ARCHIVE_DIR override the YAML logging: section values.
-    # They are injected directly into merged["logging"] so Pydantic sees them
-    # as part of LoggingSettings, not as unknown flat root keys.
     if "logging" not in merged:
         merged["logging"] = {}
     log_dir_env = os.environ.get("LOG_DIR")
@@ -244,12 +321,17 @@ def load_settings(config_dir: str | Path | None = None) -> Settings:
         if env_val is not None:
             merged[secret] = env_val
 
-    # --- 7. Validate via Pydantic (extra=forbid catches unknown keys) ---
+    # --- 7. Validate service config via Pydantic (extra=forbid catches unknown keys) ---
     try:
         settings = Settings(**merged)
     except ValidationError as exc:
         raise ValueError(
             f"Configuration validation failed:\n{exc}"
         ) from exc
+
+    # --- 8. Load prompts.yaml independently and attach to settings ---
+    # prompts is typed Any on Settings so Pydantic does not re-validate it.
+    # PromptsConfig already validated structure during _load_prompts().
+    settings.prompts = _load_prompts(config_dir)
 
     return settings

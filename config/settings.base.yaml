@@ -2,6 +2,9 @@
 # V0 - Initial implementation
 # V1 - Updated in Story 2.1: default_top_rows and max_nl_query_length set to 0
 #      0 means no limit applied — SQL Builder omits TOP clause, API skips length check
+# V2 - Updated in Story 3.6: removed step1_token_target + step2_token_target (old two-call design)
+#      Added nl_to_ir_strategy and prompt_example_set (single-call strategy, architecture v1.6)
+#
 # Shared config — all environments
 # All keys must be declared here. Dev/prod may override values but never introduce new keys.
 
@@ -20,8 +23,8 @@ llm:
   timeout_seconds: 30
   retry_max: 3
   retry_backoff_seconds: 2
-  step1_token_target: 1000
-  step2_token_target: 1200
+  nl_to_ir_strategy: single_call
+  prompt_example_set: default
 
 sql:
   default_top_rows: 0        # 0 = omit TOP clause entirely. Any positive number = SELECT TOP {n}
