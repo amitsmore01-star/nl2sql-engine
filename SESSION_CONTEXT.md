@@ -17,6 +17,7 @@
 - 3.2 ✅ Mock + OpenAI Provider (all tests passing — 22 passed, 2 skipped)
 - 3.3 ✅ Azure OpenAI + Anthropic Provider
 - 3.4 ✅ Schema Summary Builder (all tests passing)
+- 3.5 ✅ NL-to-IR Strategy Scaffold + QueryContext Refactor (all tests passing)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -26,10 +27,10 @@ Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 Sprint 3 — LLM Layer
 
 ## Current Story
-3.4 — Schema Summary Builder ✅ COMPLETE
+3.5 — NL-to-IR Strategy Scaffold + QueryContext Refactor ✅ COMPLETE
 
 ## Next Story
-3.5 — NL-to-IR Strategy Scaffold + QueryContext Refactor
+3.6 — Single-Call Strategy + Prompt Assembly
 
 ## Files Built So Far
 
@@ -74,12 +75,8 @@ Sprint 3 — LLM Layer
                                             Defaults to [] so all existing callers unaffected.
                                             Callers inspect error.missing_fields directly
                                             rather than parsing the message string.)
-                                    ← V3. Added UnknownProviderError class.
-                                      Raised by LLMProviderFactory when provider string
-                                      does not match any known provider.
-                                    ← TO UPDATE in Story 3.5: V4 — add UnknownStrategyError class.
-                                      Raised by NLToIRStrategyFactory when nl_to_ir_strategy
-                                      value does not match any registered strategy.
+                                    ← V3. Added UnknownProviderError class.Raised by LLMProviderFactory when provider string does not match any known provider.
+                                    ← V4. Added UnknownStrategyError class. Raised by NLToIRStrategyFactory when nl_to_ir_strategy value does not match any registered strategy.
 
 - src/core/constants.py             ← new in 1.6 (log stage constants only)
                                     ← updated in 2.1 (all 12 error code constants added)
@@ -88,6 +85,9 @@ Sprint 3 — LLM Layer
                                       code constant. Also update log stage constants:
                                       remove LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT,
                                       add INTENT_GUARD_RESULT + LLM_OUTPUT.
+                                    ← V3. Replaced LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT
+                                      with INTENT_GUARD_RESULT + LLM_OUTPUT.
+                                      Added UNKNOWN_STRATEGY error code constant.
 
 - src/core/models.py                ← new in 2.1 (QueryContext + StructuredQuery + sub-models)
                                     KEY CONSTRAINTS discovered in 2.5:
@@ -97,9 +97,9 @@ Sprint 3 — LLM Layer
                                       QueryContext.nl_query_original: str  — required, no default.
                                       StructuredQuery.app_id: str  — required, no default.
                                         Must pass app_id= when constructing: StructuredQuery(app_id="ABC_app")
-                                    ← TO UPDATE in Story 3.5: V1 — remove intent_output and
-                                      mapping_output fields, add single llm_output field.
-                                      llm_output: Optional[dict[str, Any]] = None
+                                    ← V1. Removed intent_output + mapping_output fields.
+                                      Added single llm_output: Optional[dict[str, Any]] = None.
+                                      Added total_latency_ms: int = 0 field.
                                       Holds full simplified IR from NL-to-IR Strategy.
 
 - src/core/logging/log_models.py    ← new in 1.6
@@ -116,7 +116,7 @@ Sprint 3 — LLM Layer
 - src/api/models/request.py         ← new in 2.3
 - src/api/models/response.py        ← new in 2.3
 
-- src/api/tools/context_validator.py ← new in 2.5
+- src/api/tools/context_validator.py  ← new in 2.5
                                         Design patterns: Strategy, Factory, Open/Closed,
                                         Single Responsibility
                                         StageRequirements: ABC with stage_name + required_fields
@@ -144,8 +144,10 @@ Sprint 3 — LLM Layer
                                           "" or whitespace-only → missing for string fields only
                                           {} (empty dict) → NOT missing, valid value
                                           Unknown stage name → raises ValueError (programming error)
-                                        ← TO UPDATE in Story 3.5: V1 — refactor per
-                                          Pre-Implementation Design Decisions (LLM) section below.
+                                      ← V1. Removed SchemMapperRequirements.
+                                        Renamed IntentExtractorRequirements → NLToIRRequirements (stage: "nl-to-ir").
+                                        Updated ValidatorRequirements: requires llm_output instead of intent_output + mapping_output.
+                                        Registry now has 5 stages.
 
 - src/api/tools/feedback_tool.py    ← new in 2.5
                                         TODO Phase 3 placeholder only.
@@ -221,9 +223,11 @@ Sprint 3 — LLM Layer
                                       Token budget: under 4,800 characters (~1,200 tokens).
                                       Output is deterministic — same input, same output.
 
-- src/pipeline/strategies/__init__.py  ← TO CREATE in Story 3.5
-- src/pipeline/strategies/base.py      ← TO CREATE in Story 3.5
-- src/pipeline/strategies/factory.py   ← TO CREATE in Story 3.5
+- src/pipeline/strategies/__init__.py  ← NEW V0. Story 3.5
+- src/pipeline/strategies/base.py      ← NEW V0. Story 3.5 NLToIRStrategy ABC. Two abstract methods: execute() and strategy_name().
+                                          Mirrors LLMProvider ABC pattern exactly.
+- src/pipeline/strategies/factory.py   ← NEW V0. NLToIRStrategyFactory. Lazy imports SingleCallStrategy (not yet built).
+                                          Unknown strategy → UnknownStrategyError. registered_strategies() helper for health checks.
 - src/pipeline/strategies/single_call.py ← TO CREATE in Story 3.6
 - src/pipeline/prompt_builder.py        ← TO CREATE in Story 3.6
 - src/pipeline/intent_guard.py          ← TO CREATE in Story 3.7
@@ -244,7 +248,7 @@ Sprint 3 — LLM Layer
 - tests/core/logging/test_log_models.py     ← new in 1.6 (M1-M9)
 - tests/core/logging/test_logger.py         ← new in 1.6 (L1-L17)
 - tests/core/test_models.py                 ← new in 2.1
-                                            ← TO UPDATE in Story 3.5: V1 — update for llm_output field
+                                            ← V1. Added C1-C5 for llm_output field.Removed all intent_output/mapping_output refs.
 - tests/core/test_constants.py              ← new in 2.1
 - tests/core/test_exceptions.py             ← new in 2.1
 - tests/validator/test_app_identifier.py    ← new in 2.2
@@ -258,8 +262,8 @@ Sprint 3 — LLM Layer
 - tests/api/tools/test_context_validator.py ← new in 2.5
                                               Groups: A1-A6, B1-B5, C1-C2, D1-D4, E1-E2, F1-F4
                                               + StageRequirements direct unit tests. All passing.
-                                            ← TO UPDATE in Story 3.5: V1 — update for
-                                              NLToIRRequirements and llm_output field.
+                                            ← V1. Replaced intent-extractor/schema-mapper
+                                               tests with nl-to-ir tests. Updated validator tests for llm_output. Registry count: 6 → 5 stages.
 
 - tests/api/tools/test_feedback_tool.py     ← new in 2.5. 2 tests: 501 + Phase 3 message.
 
@@ -271,9 +275,9 @@ Sprint 3 — LLM Layer
 - tests/llm/test_anthropic_provider.py      ← NEW V0. 8 tests: F1-F8.
 - tests/pipeline/test_schema_summary.py     ← NEW V0. 10 tests: A1-A6, B1, C1-C4.
 
-- tests/pipeline/strategies/__init__.py       ← TO CREATE in Story 3.5
-- tests/pipeline/strategies/test_base.py      ← TO CREATE in Story 3.5
-- tests/pipeline/strategies/test_factory.py   ← TO CREATE in Story 3.5
+- tests/pipeline/strategies/__init__.py       ← NEW V0. in Story 3.5
+- tests/pipeline/strategies/test_base.py      ← NEW V0. in Story 3.5 5 tests: A1-A4 + A2 extended.
+- tests/pipeline/strategies/test_factory.py   ← NEW V0. in Story 3.5 5 tests: B1-B4 + B1 extended.
 - tests/pipeline/test_prompt_builder.py       ← TO CREATE in Story 3.6
 - tests/pipeline/strategies/test_single_call.py ← TO CREATE in Story 3.6
 - tests/pipeline/test_intent_guard.py         ← TO CREATE in Story 3.7
@@ -465,6 +469,19 @@ These bullets move to Key Decisions Made as each story completes.
 - Token budget: output under 4,800 characters (~1,200 tokens at ~4 chars/token).
 - Output is deterministic — same input always produces same output.
 
+### NL-to-IR Strategy Scaffold (3.5)
+- NLToIRStrategy ABC mirrors LLMProvider ABC exactly — same pattern, same rationale
+- NLToIRStrategyFactory uses lazy imports for SingleCallStrategy — same pattern as LLMProviderFactory. Strategy files can be absent during    early stories without breaking imports.
+- Factory in this story has an empty registry until Story 3.6 adds SingleCallStrategy. registered_strategies() returns [] until then — this is correct and tested (B4).
+- _PatchedFactory test pattern used in test_factory.py — injects a stub strategy to test the factory mechanism without needing SingleCallStrategy to exist.
+context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validator, sql-builder, query.
+- intent-extractor and schema-mapper stage names are gone — any agent sending those names will receive a ValueError (programming error, not a pipeline error).
+- total_latency_ms: int = 0 added to QueryContext in this story — was in the architecture doc but missing from V0 models.py.
+- QueryContext: intent_output + mapping_output removed → single llm_output field ✅
+- NLToIRStrategy ABC + NLToIRStrategyFactory — Strategy pattern mirrors LLMProviderFactory ✅
+- UnknownStrategyError + UNKNOWN_STRATEGY error code added ✅
+- context_validator.py refactored — SchemMapperRequirements deleted, IntentExtractorRequirements renamed to NLToIRRequirements, ValidatorRequirements updated to require llm_output ✅
+
 ### Bug Fix (schema_repository.py — 2.4)
 - SchemaLoadError calls fixed from SchemaLoadError(code=..., message=...)
   to SchemaLoadError(message=...) — code auto-injected from constants
@@ -493,3 +510,4 @@ These bullets move to Key Decisions Made as each story completes.
 - Full LLM layer redesign documented across all sections
 - See architecture document v1.6 (consolidated from PART1 + PART2 + PART3 md files)
 - Key sections changed: 2, 3.1, 4, 6, 7, 8, 10, 12, 13, 14, 16, 17
+

@@ -1,5 +1,11 @@
 # src/api/tools/context_validator.py
 # V0 - Initial implementation
+# V1 - Story 3.5: Architecture v1.6 redesign.
+#      - Removed SchemMapperRequirements (schema-mapper stage no longer exists)
+#      - Renamed IntentExtractorRequirements → NLToIRRequirements (stage: nl-to-ir)
+#      - Updated ValidatorRequirements: requires llm_output instead of
+#        intent_output + mapping_output
+#      - Updated _build_registry() to use renamed/removed classes
 
 """
 Context Validator for Foundry tool endpoints.
@@ -18,6 +24,13 @@ Why request_id is NOT validated here:
   QueryContext.request_id has default_factory=lambda: str(uuid.uuid4()).
   Pydantic auto-generates it before this validator ever runs, so it is
   always guaranteed to be present.
+
+Stage registry (architecture v1.6):
+  app-identifier  → nl_query_original
+  nl-to-ir        → nl_query_original, app_id, app_schema_version
+  validator       → app_id, app_schema_version, llm_output
+  sql-builder     → app_id, structured_query
+  query           → nl_query_original
 """
 
 from __future__ import annotations
@@ -117,41 +130,27 @@ class AppIdentifierRequirements(StageRequirements):
         return ["nl_query_original"]
 
 
-class IntentExtractorRequirements(StageRequirements):
+class NLToIRRequirements(StageRequirements):
     """
-    Stage: intent-extractor
-    App must already be identified before LLM Step 1 runs.
+    Stage: nl-to-ir  (architecture v1.6 — replaces intent-extractor + schema-mapper)
+    Single LLM call that produces the full simplified IR.
+    App must already be identified before this stage runs.
     """
 
     @property
     def stage_name(self) -> str:
-        return "intent-extractor"
+        return "nl-to-ir"
 
     @property
     def required_fields(self) -> list[str]:
         return ["nl_query_original", "app_id", "app_schema_version"]
 
 
-class SchemMapperRequirements(StageRequirements):
-    """
-    Stage: schema-mapper
-    LLM Step 2 maps the intent to schema elements — needs intent_output
-    from Step 1 to be present.
-    """
-
-    @property
-    def stage_name(self) -> str:
-        return "schema-mapper"
-
-    @property
-    def required_fields(self) -> list[str]:
-        return ["app_id", "app_schema_version", "intent_output"]
-
-
 class ValidatorRequirements(StageRequirements):
     """
     Stage: validator
-    Deterministic validation needs both LLM outputs before it can run.
+    Deterministic validation needs llm_output from the NL-to-IR Strategy.
+    llm_output={} (empty dict) is valid — None means the strategy never ran.
     """
 
     @property
@@ -160,7 +159,7 @@ class ValidatorRequirements(StageRequirements):
 
     @property
     def required_fields(self) -> list[str]:
-        return ["app_id", "app_schema_version", "intent_output", "mapping_output"]
+        return ["app_id", "app_schema_version", "llm_output"]
 
 
 class SqlBuilderRequirements(StageRequirements):
@@ -204,7 +203,7 @@ class ContextValidator:
 
     Usage:
         validator = ContextValidator()
-        validator.validate(context, stage_name="schema-mapper")
+        validator.validate(context, stage_name="nl-to-ir")
 
     Raises:
         ValueError:                  if stage_name is not recognised.
@@ -225,8 +224,7 @@ class ContextValidator:
         """
         strategies: list[StageRequirements] = [
             AppIdentifierRequirements(),
-            IntentExtractorRequirements(),
-            SchemMapperRequirements(),
+            NLToIRRequirements(),
             ValidatorRequirements(),
             SqlBuilderRequirements(),
             FullQueryRequirements(),
@@ -244,7 +242,7 @@ class ContextValidator:
 
         Args:
             context:    The QueryContext received in the HTTP request body.
-            stage_name: The stage slug, e.g. "schema-mapper".
+            stage_name: The stage slug, e.g. "nl-to-ir".
 
         Raises:
             ValueError:                Unknown stage_name (programming error).

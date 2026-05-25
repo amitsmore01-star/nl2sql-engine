@@ -1,5 +1,7 @@
 # src/core/models.py
 # V0 - Initial implementation
+# V1 - Story 3.5: Replaced intent_output + mapping_output with single llm_output field.
+#      llm_output holds the full simplified IR from the NL-to-IR Strategy (arch v1.6).
 #
 # Shared Pydantic models used across the entire nl2sql-engine pipeline.
 #
@@ -19,7 +21,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +68,11 @@ class ResolvedJoin(BaseModel):
             on_right="cd.CustomerID"
         )
     """
-    join_type: str  = "INNER JOIN"  # Defaults to INNER JOIN — only type used in Phase 1
-    table_name: str                 # Full schema-qualified name of the joined table
-    alias: str                      # Alias for the joined table in SQL
-    on_left: str                    # Left side of ON condition e.g. "c.CustomerID"
-    on_right: str                   # Right side of ON condition e.g. "cd.CustomerID"
+    join_type: str = "INNER JOIN"  # Defaults to INNER JOIN — only type used in Phase 1
+    table_name: str                # Full schema-qualified name of the joined table
+    alias: str                     # Alias for the joined table in SQL
+    on_left: str                   # Left side of ON condition e.g. "c.CustomerID"
+    on_right: str                  # Right side of ON condition e.g. "cd.CustomerID"
 
 
 class ResolvedFilter(BaseModel):
@@ -155,9 +157,11 @@ class QueryContext(BaseModel):
 
     app_id: str = ""
     # Populated by AppIdentifier stage.
+    # NOT Optional — Pydantic rejects None. Use "" for "not yet populated".
 
     app_schema_version: str = ""
     # Populated by AppIdentifier from the schema's version field.
+    # NOT Optional — Pydantic rejects None. Use "" for "not yet populated".
 
     # --- Input ---
     nl_query_original: str
@@ -166,12 +170,18 @@ class QueryContext(BaseModel):
     nl_query_corrected: Optional[str] = None
     # Phase 2 — spell-corrected version. None in Phase 1.
 
-    # --- LLM outputs ---
-    intent_output: Optional[dict[str, Any]] = None
-    # Step 1 LLM result — populated by IntentExtractor.
-
-    mapping_output: Optional[dict[str, Any]] = None
-    # Step 2 LLM result — populated by SchemaMapper.
+    # --- LLM output (single field — architecture v1.6) ---
+    llm_output: Optional[dict[str, Any]] = None
+    # Populated by the NL-to-IR Strategy (SingleCallStrategy in Phase 1).
+    # Holds the full simplified IR:
+    #   tables:      list of {table, source}
+    #   columns:     list of {table, column, source}
+    #   filters:     list of {table, column, operator, value, source}
+    #   limit:       int | null
+    #   aggregation: dict | null   (captured in Phase 1, executed in Phase 2)
+    #   sort:        list          (captured in Phase 1, executed in Phase 2)
+    # Each entry carries a "source" field — the exact query phrase that produced it.
+    # Replaced intent_output + mapping_output from architecture v1.5 and earlier.
 
     # --- Validator outputs ---
     resolved_tables: list[str] = Field(default_factory=list)
@@ -200,8 +210,11 @@ class QueryContext(BaseModel):
     latency_ms: dict[str, Any] = Field(default_factory=dict)
     # Per-stage timing. Key = stage name, value = milliseconds.
 
+    total_latency_ms: int = 0
+    # End-to-end total latency in milliseconds.
+
     token_usage: dict[str, Any] = Field(default_factory=dict)
-    # LLM token usage. Keys: step1, step2, total.
+    # LLM token usage. Keys: prompt, completion, total.
 
     warnings: list[str] = Field(default_factory=list)
     # Non-fatal issues encountered during processing.

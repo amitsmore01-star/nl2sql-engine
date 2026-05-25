@@ -70,8 +70,7 @@ def make_query_context_dict(**overrides) -> dict:
         "app_schema_version": "1.0",
         "nl_query_original": "give me customer name for customer ASA in ABC",
         "nl_query_corrected": None,
-        "intent_output": None,
-        "mapping_output": None,
+        "llm_output": None,
         "resolved_tables": [],
         "resolved_columns": [],
         "resolved_filters": [],
@@ -320,7 +319,7 @@ class TestToolRequest:
         assert req.app_id == "ABC_app"
         assert req.app_schema_version == "1.0"
         assert req.status == "pending"
-        assert req.intent_output is None
+        assert req.llm_output is None # TODO: decide if we want to keep llm_output or just intent_output in QueryContext — for now, just check intent_output
         assert req.sql is None
 
     def test_treq5_is_subclass_of_query_context(self):
@@ -502,7 +501,7 @@ class TestToolResponse:
         context_data = make_query_context_dict(
             app_id="ABC_app",
             status="success",
-            intent_output={"intent": "select", "entities": ["customer"]},
+            llm_output={"intent": "select", "entities": ["customer"]},
         )
 
         response = ToolResponse.model_validate({
@@ -522,7 +521,7 @@ class TestToolResponse:
         intent = {"intent": "select", "entities": ["customer"], "fields": ["customer name"]}
         context_data = make_query_context_dict(
             app_id="ABC_app",
-            intent_output=intent,
+            llm_output=intent,
         )
 
         response = ToolResponse.model_validate({
@@ -533,7 +532,7 @@ class TestToolResponse:
         })
 
         assert response.context.app_id == "ABC_app"
-        assert response.context.intent_output == intent
+        assert response.context.llm_output == intent  #TODO: decide if we want to keep llm_output or just intent_output in QueryContext — for now, just check intent_output
 
     def test_tres3_errors_list_with_one_error(self):
         """TRes-3: errors list contains one ErrorDetail → parses correctly."""

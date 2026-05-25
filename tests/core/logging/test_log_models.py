@@ -120,8 +120,8 @@ class TestLogStageConstants:
     ALL_STAGES = [
         "REQUEST_RECEIVED",
         "APP_DETECTED",
-        "LLM_INTENT_OUTPUT",
-        "LLM_SCHEMA_MAPPING_OUTPUT",
+        "INTENT_GUARD_RESULT",
+        "LLM_OUTPUT",
         "VALIDATION_RESULT",
         "STRUCTURED_QUERY_BUILT",
         "SQL_BUILT",

@@ -3,10 +3,11 @@
 # V1 - Story 2.1: Added 11 exception subclasses total.
 # V2 - Story 2.5: MissingContextFieldsError extended with missing_fields: list[str] attribute.
 # V3 - Story 3.1: Added UnknownProviderError for unrecognised LLM provider strings.
+# V4 - Story 3.5: Added UnknownStrategyError for unrecognised NL-to-IR strategy strings.
 # All custom exceptions for the nl2sql-engine.
 # Every exception carries a machine-readable code and a human-readable message.
 # Codes must match the constants defined in src/core/constants.py exactly.
- 
+
 from src.core.constants import (
     APP_NOT_DETERMINED,
     MULTIPLE_APPS_MATCHED,
@@ -21,29 +22,30 @@ from src.core.constants import (
     SCHEMA_LOAD_ERROR,
     INTERNAL_ERROR,
     UNKNOWN_PROVIDER,
+    UNKNOWN_STRATEGY,
 )
- 
- 
+
+
 class NL2SQLBaseError(Exception):
     """
     Base exception for all nl2sql-engine errors.
     All custom exceptions inherit from this class.
     Carries a machine-readable code and a human-readable message.
     """
- 
+
     def __init__(self, code: str, message: str) -> None:
         self.code = code
         self.message = message
         super().__init__(message)
- 
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(code={self.code!r}, message={self.message!r})"
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Startup Errors
 # ---------------------------------------------------------------------------
- 
+
 class SchemaLoadError(NL2SQLBaseError):
     """
     Raised when a schema file cannot be loaded or fails validation.
@@ -51,13 +53,13 @@ class SchemaLoadError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=SCHEMA_LOAD_ERROR, message=message)
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Business Errors — HTTP 200
 # These are expected pipeline outcomes, not server failures.
 # ---------------------------------------------------------------------------
- 
+
 class AppNotDeterminedError(NL2SQLBaseError):
     """
     Raised when no app schema matches the NL query.
@@ -65,8 +67,8 @@ class AppNotDeterminedError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=APP_NOT_DETERMINED, message=message)
- 
- 
+
+
 class MultipleAppsMatchedError(NL2SQLBaseError):
     """
     Raised when the NL query matches more than one app schema.
@@ -74,8 +76,8 @@ class MultipleAppsMatchedError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=MULTIPLE_APPS_MATCHED, message=message)
- 
- 
+
+
 class NoRelevantTablesError(NL2SQLBaseError):
     """
     Raised when the LLM proposes tables that do not exist in the schema.
@@ -83,8 +85,8 @@ class NoRelevantTablesError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=NO_RELEVANT_TABLES, message=message)
- 
- 
+
+
 class NoRelevantColumnsError(NL2SQLBaseError):
     """
     Raised when the LLM proposes columns that do not belong to their table.
@@ -92,8 +94,8 @@ class NoRelevantColumnsError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=NO_RELEVANT_COLUMNS, message=message)
- 
- 
+
+
 class NoJoinPathError(NL2SQLBaseError):
     """
     Raised when no join path exists between the required tables.
@@ -101,17 +103,18 @@ class NoJoinPathError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=NO_JOIN_PATH, message=message)
- 
- 
+
+
 class UnsupportedIntentError(NL2SQLBaseError):
     """
-    Raised when the LLM extracts an intent other than 'select'.
+    Raised when the query contains a non-select keyword (DELETE, DROP, etc.).
+    Detected deterministically by the Intent Guard before any LLM call.
     Only SELECT queries are supported in Phase 1.
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=UNSUPPORTED_INTENT, message=message)
- 
- 
+
+
 class ValidationFailedError(NL2SQLBaseError):
     """
     Raised when the deterministic validator rejects the LLM's proposals.
@@ -119,8 +122,8 @@ class ValidationFailedError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=VALIDATION_FAILED, message=message)
- 
- 
+
+
 class LLMOutputParseError(NL2SQLBaseError):
     """
     Raised when the LLM returns a response that cannot be parsed as valid JSON.
@@ -128,12 +131,12 @@ class LLMOutputParseError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=LLM_OUTPUT_PARSE_ERROR, message=message)
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Tool Endpoint Errors — HTTP 400
 # ---------------------------------------------------------------------------
- 
+
 class MissingContextFieldsError(NL2SQLBaseError):
     """
     Raised when a Foundry tool endpoint receives a QueryContext that is missing
@@ -147,20 +150,20 @@ class MissingContextFieldsError(NL2SQLBaseError):
 
     Example:
         raise MissingContextFieldsError(
-            message="Stage 'schema-mapper' is missing: intent_output",
-            missing_fields=["intent_output"],
+            message="Stage 'nl-to-ir' is missing: app_id",
+            missing_fields=["app_id"],
         )
     """
     def __init__(self, message: str, missing_fields: list[str] | None = None) -> None:
         super().__init__(code=MISSING_CONTEXT_FIELDS, message=message)
         # Always a list — never None — so callers can safely iterate
         self.missing_fields: list[str] = missing_fields or []
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Auth Errors — HTTP 401
 # ---------------------------------------------------------------------------
- 
+
 class UnauthorizedError(NL2SQLBaseError):
     """
     Raised when the X-API-Key or X-Foundry-API-Key header is missing or incorrect.
@@ -168,12 +171,12 @@ class UnauthorizedError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=UNAUTHORIZED, message=message)
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Server Errors — HTTP 500
 # ---------------------------------------------------------------------------
- 
+
 class InternalError(NL2SQLBaseError):
     """
     Raised for any unhandled exception in the pipeline.
@@ -196,3 +199,17 @@ class UnknownProviderError(NL2SQLBaseError):
     def __init__(self, message: str) -> None:
         super().__init__(code=UNKNOWN_PROVIDER, message=message)
 
+
+# ---------------------------------------------------------------------------
+# NL-to-IR Strategy Errors
+# ---------------------------------------------------------------------------
+
+class UnknownStrategyError(NL2SQLBaseError):
+    """
+    Raised by NLToIRStrategyFactory when the configured nl_to_ir_strategy
+    string does not match any registered strategy.
+    Example: nl_to_ir_strategy: typo → UnknownStrategyError.
+    Causes service to refuse to start (same behaviour as UnknownProviderError).
+    """
+    def __init__(self, message: str) -> None:
+        super().__init__(code=UNKNOWN_STRATEGY, message=message)
