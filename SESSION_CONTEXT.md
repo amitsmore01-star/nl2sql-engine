@@ -15,22 +15,21 @@
 - 2.6 ✅ Query Endpoint Skeleton (user-facing)
 - 3.1 ✅ LLM Base & Factory (all tests passing — 9 pass, 3 skipped)
 - 3.2 ✅ Mock + OpenAI Provider (all tests passing — 22 passed, 2 skipped)
-- 3.3 ✅ Azure OpenAI + Anthropic Provider 
+- 3.3 ✅ Azure OpenAI + Anthropic Provider
 - 3.4 ✅ Schema Summary Builder (all tests passing)
 
-## Completed Sprint 
-Sprint 1 —
+## Completed Sprints
+Sprint 1 — Foundation ✅ COMPLETE
 Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
-
 
 ## Current Sprint
 Sprint 3 — LLM Layer
 
 ## Current Story
-- 3.4 — Schema Summary Builder ✅ COMPLETE
+3.4 — Schema Summary Builder ✅ COMPLETE
 
 ## Next Story
-3.5 — Intent Extractor
+3.5 — NL-to-IR Strategy Scaffold + QueryContext Refactor
 
 ## Files Built So Far
 
@@ -42,10 +41,13 @@ Sprint 3 — LLM Layer
 - README.md
 
 ### Config
-- config/settings.base.yaml        ← updated in 1.2 (added llm.provider to base)
-                                   ← updated in 1.6 (log_dir, log_archive_dir moved under logging:)
+- config/settings.base.yaml         ← updated in 1.2 (added llm.provider to base)
+                                    ← updated in 1.6 (log_dir, log_archive_dir moved under logging:)
+                                    ← TO UPDATE in Story 3.6: add nl_to_ir_strategy and
+                                       prompt_example_set under llm: section
 - config/settings.dev.yaml
 - config/settings.prod.yaml
+- config/prompts.yaml               ← TO CREATE in Story 3.6 (sectioned prompt definitions)
 
 ### Schemas
 - schemas/ABC_app.json
@@ -56,6 +58,10 @@ Sprint 3 — LLM Layer
                                     ← V1 in 2.4 (replaced api_key with client_api_key + foundry_api_key,
                                             added prod validator, fixed log_dir/log_archive_dir into
                                             merged["logging"] section)
+                                    ← TO UPDATE in Story 3.6: V2 — load prompts.yaml, add
+                                       nl_to_ir_strategy + prompt_example_set to LLMSettings
+
+- src/config/prompts_models.py      ← TO CREATE in Story 3.6 (Pydantic models for prompts.yaml)
 
 - src/schema/schema_models.py       ← new in 1.3 (43 tests, all passing)
 - src/schema/schema_repository.py   ← V1 in 2.4 (removed stale code= kwarg from all SchemaLoadError calls)
@@ -70,12 +76,18 @@ Sprint 3 — LLM Layer
                                             rather than parsing the message string.)
                                     ← V3. Added UnknownProviderError class.
                                       Raised by LLMProviderFactory when provider string
-                                      does not match any known provider.        
+                                      does not match any known provider.
+                                    ← TO UPDATE in Story 3.5: V4 — add UnknownStrategyError class.
+                                      Raised by NLToIRStrategyFactory when nl_to_ir_strategy
+                                      value does not match any registered strategy.
 
 - src/core/constants.py             ← new in 1.6 (log stage constants only)
                                     ← updated in 2.1 (all 12 error code constants added)
                                     ← V2. Added UNKNOWN_PROVIDER error code constant.
-
+                                    ← TO UPDATE in Story 3.5: V3 — add UNKNOWN_STRATEGY error
+                                      code constant. Also update log stage constants:
+                                      remove LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT,
+                                      add INTENT_GUARD_RESULT + LLM_OUTPUT.
 
 - src/core/models.py                ← new in 2.1 (QueryContext + StructuredQuery + sub-models)
                                     KEY CONSTRAINTS discovered in 2.5:
@@ -85,15 +97,17 @@ Sprint 3 — LLM Layer
                                       QueryContext.nl_query_original: str  — required, no default.
                                       StructuredQuery.app_id: str  — required, no default.
                                         Must pass app_id= when constructing: StructuredQuery(app_id="ABC_app")
+                                    ← TO UPDATE in Story 3.5: V1 — remove intent_output and
+                                      mapping_output fields, add single llm_output field.
+                                      llm_output: Optional[dict[str, Any]] = None
+                                      Holds full simplified IR from NL-to-IR Strategy.
 
 - src/core/logging/log_models.py    ← new in 1.6
 - src/core/logging/logger.py        ← new in 1.6
 
 - src/api/app.py                    ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
-                                    ← V1 in 2.5 (registered feedback_tool router:
-                                            from src.api.tools.feedback_tool import router as feedback_tool_router
-                                            app.include_router(feedback_tool_router, prefix="/v1/tools"))
+                                    ← V1 in 2.5 (registered feedback_tool router)
                                     ← V1. Registered query_router with prefix="/v1".
 
 - src/api/health.py                 ← new in 1.5
@@ -130,6 +144,8 @@ Sprint 3 — LLM Layer
                                           "" or whitespace-only → missing for string fields only
                                           {} (empty dict) → NOT missing, valid value
                                           Unknown stage name → raises ValueError (programming error)
+                                        ← TO UPDATE in Story 3.5: V1 — refactor per
+                                          Pre-Implementation Design Decisions (LLM) section below.
 
 - src/api/tools/feedback_tool.py    ← new in 2.5
                                         TODO Phase 3 placeholder only.
@@ -137,22 +153,27 @@ Sprint 3 — LLM Layer
                                         Router registered in app.py with prefix="/v1/tools".
 
 - src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
-                                     Builds QueryContext, calls run_app_identifier(),
-                                     returns QueryResponse with app in meta.
-                                     sql=None until pipeline wired (Story 5.4).
-                                     Business errors → HTTP 200 with errors[].
-                                     Internal errors → HTTP 500.                                        
+                                      Builds QueryContext, calls run_app_identifier(),
+                                      returns QueryResponse with app in meta.
+                                      sql=None until pipeline wired (Story 5.4).
+                                      Business errors → HTTP 200 with errors[].
+                                      Internal errors → HTTP 500.
+                                    ← TO UPDATE in Story 3.7: V1 — call orchestrator
+                                      instead of run_app_identifier() directly.
+                                      Returns temporary full QueryContext response shape.
+                                      TODO marker added — Story 5.4 replaces with final
+                                      QueryResponse shape.
+                                    ← TO UPDATE in Story 5.4: V2 — replace temporary
+                                      QueryContext response with final QueryResponse shape.
+                                      Remove TODO marker.
 
 - src/validator/app_identifier.py   ← new in 2.2
-                                     V1. Bug fix: logger.log() now receives
-                                     LogEntry(...) object, not keyword arguments.
-                                     StructuredLogger.log(entry: LogEntry) only
-                                     accepts a LogEntry — callers must construct it.
+                                      V1. Bug fix: logger.log() now receives
+                                      LogEntry(...) object, not keyword arguments.
                                     ← V2. Bug fix (reverted): get_all_schemas()
-                                     returns list[AppSchema] in the real codebase.
-                                     Reverted to list iteration pattern manually.
-                                     Final state: list-based iteration kept throughout.
-
+                                      returns list[AppSchema] in the real codebase.
+                                      Reverted to list iteration pattern manually.
+                                      Final state: list-based iteration kept throughout.
 
 - src/llm/base.py                   ← NEW V0. LLMProvider ABC.
                                       Two abstract methods: complete() and provider_name().
@@ -164,9 +185,9 @@ Sprint 3 — LLM Layer
                                       Used in ALL tests — zero real API calls.
                                       Accepts responses: list[str] at construction time.
                                       Each complete() call returns next string in order.
-                                      Supports two-step LLM pattern:
-                                        Call 1 → responses[0]  (intent JSON)
-                                        Call 2 → responses[1]  (mapping JSON)
+                                      NOTE: Originally described as two-step (intent → mapping)
+                                      but now used for single-call simplified IR response.
+                                      In tests, responses[0] = canned simplified IR JSON string.
                                       Empty list → ValueError at construction.
                                       More calls than responses → ValueError at call time.
 
@@ -180,22 +201,9 @@ Sprint 3 — LLM Layer
                                       Unknown provider → UnknownProviderError.
 
 - src/llm/openai_provider.py        ← NEW V0. OpenAIProvider.
-                                      Implements LLMProvider ABC.
-                                      Synchronous — httpx.Client (blocking). No async.
-                                      Reads from settings:
-                                        settings.openai_api_key       — OPENAI_API_KEY from .env
-                                        settings.llm.timeout_seconds  — per-call timeout
-                                        settings.llm.retry_max        — max attempts
-                                        settings.llm.retry_backoff_seconds — base backoff
-                                        settings.llm.max_tokens       — max response tokens
+                                      Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                      Model: gpt-4o-mini. Retry + exponential backoff.
                                       Raises ValueError at construction if openai_api_key missing.
-                                      Retry loop: up to retry_max attempts, exponential backoff.
-                                      Retries on: httpx.TimeoutException, httpx.HTTPStatusError.
-                                      All retries exhausted → raises LLMOutputParseError.
-                                      _call() separated from complete() — HTTP layer isolated
-                                      for clean retry loop and testability.
-                                      Model: gpt-4o-mini. URL: constant _OPENAI_API_URL.
-                                      provider_name() returns "openai".
 
 - src/llm/azure_openai_provider.py  ← NEW V0. AzureOpenAIProvider.
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
@@ -204,18 +212,28 @@ Sprint 3 — LLM Layer
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
 
 - src/pipeline/schema_summary.py    ← NEW V0. build_schema_summary(schema: AppSchema) -> str.
-                                      Compresses AppSchema into plain-text for LLM Step 2.
+                                      Compresses AppSchema into plain-text for LLM prompt.
                                       Junction tables excluded entirely.
-                                      Table line: name + synonyms in brackets.
-                                      Column line: name only if no synonyms, name [synonyms]
-                                      if synonyms defined.
-                                      Phase 2 note: is_identifier and is_default_text flags
-                                      not included in summary — flagged for Phase 2 if LLM
-                                      mapping quality needs improvement.
+                                      Table format: table: Major.Customer [synonym1, synonym2]
+                                      Column format with synonyms: CustomerCID [Customer id, Customer cid]
+                                      Column format without synonyms: CustomerID (plain name)
+                                      Column types, business rules, versioning excluded.
+                                      Token budget: under 4,800 characters (~1,200 tokens).
+                                      Output is deterministic — same input, same output.
+
+- src/pipeline/strategies/__init__.py  ← TO CREATE in Story 3.5
+- src/pipeline/strategies/base.py      ← TO CREATE in Story 3.5
+- src/pipeline/strategies/factory.py   ← TO CREATE in Story 3.5
+- src/pipeline/strategies/single_call.py ← TO CREATE in Story 3.6
+- src/pipeline/prompt_builder.py        ← TO CREATE in Story 3.6
+- src/pipeline/intent_guard.py          ← TO CREATE in Story 3.7
+- src/pipeline/orchestrator.py          ← TO CREATE in Story 3.7 (V0 — partial)
+                                        ← TO UPDATE in Story 5.4 (V1 — final)
 
 ### Tests
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
                                              ← updated in 1.6 (log_dir assertion fixed)
+                                             ← TO UPDATE in Story 3.6: V2 — test prompts.yaml loading
 - tests/schema/test_schema_models.py        ← new in 1.3 (43 tests)
 - tests/schema/test_schema_repository.py
 - tests/schema/test_schema_validator.py
@@ -226,60 +244,76 @@ Sprint 3 — LLM Layer
 - tests/core/logging/test_log_models.py     ← new in 1.6 (M1-M9)
 - tests/core/logging/test_logger.py         ← new in 1.6 (L1-L17)
 - tests/core/test_models.py                 ← new in 2.1
+                                            ← TO UPDATE in Story 3.5: V1 — update for llm_output field
 - tests/core/test_constants.py              ← new in 2.1
 - tests/core/test_exceptions.py             ← new in 2.1
 - tests/validator/test_app_identifier.py    ← new in 2.2
 - tests/api/test_models.py                  ← new in 2.3
 - tests/api/test_auth.py                    ← new in 2.4 (A1-A5, B1-B5, C1-C3, D1-D2)
-- tests/api/v1/test_query.py       ← NEW V0. 15 tests: A1-A3 auth, B1-B5 validation,
-                                     C1-C4 success, D1-D2 business errors, E1 internal.
-
-
+- tests/api/v1/test_query.py                ← NEW V0. 15 tests: A1-A3 auth, B1-B5 validation,
+                                              C1-C4 success, D1-D2 business errors, E1 internal.
+                                            ← TO UPDATE in Story 3.7: V1 — updated for orchestrator
+                                            ← TO UPDATE in Story 5.4: V2 — final response shape
 
 - tests/api/tools/test_context_validator.py ← new in 2.5
-                                              V1 — fixed make_context helper and tests:
-                                                app_id="" not None (str field, Pydantic rejects None)
-                                                app_schema_version="" not None (same reason)
-                                                StructuredQuery(app_id="ABC_app") not StructuredQuery()
                                               Groups: A1-A6, B1-B5, C1-C2, D1-D4, E1-E2, F1-F4
-                                              + StageRequirements direct unit tests
-                                              All passing.
+                                              + StageRequirements direct unit tests. All passing.
+                                            ← TO UPDATE in Story 3.5: V1 — update for
+                                              NLToIRRequirements and llm_output field.
 
-- tests/api/tools/test_feedback_tool.py     ← new in 2.5
-                                              2 tests: 501 returned, message mentions Phase 3.
-                                              Requires feedback_tool router registered in app.py.
+- tests/api/tools/test_feedback_tool.py     ← new in 2.5. 2 tests: 501 + Phase 3 message.
 
+- tests/llm/test_base.py                    ← NEW V0. 3 tests: A1-A3.
+- tests/llm/test_mock_provider.py           ← NEW V0. 6 tests: B1-B6.
+- tests/llm/test_factory.py                 ← NEW V0. 9 tests: C1-C7 (all passing after V2).
+- tests/llm/test_openai_provider.py         ← NEW V0. 8 tests: D1-D8.
+- tests/llm/test_azure_openai_provider.py   ← NEW V0. 11 tests: E1-E11.
+- tests/llm/test_anthropic_provider.py      ← NEW V0. 8 tests: F1-F8.
+- tests/pipeline/test_schema_summary.py     ← NEW V0. 10 tests: A1-A6, B1, C1-C4.
 
-- tests/llm/test_base.py            ← NEW V0. 3 tests: A1-A3.
-                                      Tests LLMProvider ABC contract —
-                                      missing abstract methods raise TypeError.
-
-- tests/llm/test_mock_provider.py   ← NEW V0. 6 tests: B1-B6.
-                                      Tests MockLLMProvider — response ordering,
-                                      isinstance check, empty list, exhausted responses.
-
-- tests/llm/test_factory.py         ← NEW V0. 9 tests: C1-C7 (C3, C4, C5 skipped).
-                                      C4 skipped — AzureOpenAIProvider not yet built (Story 3.3)
-                                      C5 skipped — AnthropicProvider not yet built (Story 3.3)
-                                      ← V1. Un-skipped C3 (OpenAIProvider now built).
-                                      _make_settings() updated to include openai_api_key param.
-                                      ← V2. Un-skipped C4 + C5.
-                                              _make_settings() updated with all Azure + Anthropic fields.
-                                      
-- tests/llm/test_openai_provider.py ← NEW V0. 8 tests: D1-D8.
-                                      Uses respx to mock httpx at transport layer.
-                                      Zero real API calls.
-                                      _make_settings() helper builds fake settings object.
-                                      _openai_response() helper builds OpenAI-shaped response body.
-                                      retry_backoff_seconds=0 in retry tests — no sleep in tests.
-
-- tests/llm/test_azure_openai_provider.py  ← NEW V0. 11 tests: E1-E11.
-- tests/llm/test_anthropic_provider.py     ← NEW V0. 8 tests: F1-F8.
- 
-- tests/pipeline/test_schema_summary.py  ← NEW V0. 10 tests: A1-A6, B1, C1-C4.           
+- tests/pipeline/strategies/__init__.py       ← TO CREATE in Story 3.5
+- tests/pipeline/strategies/test_base.py      ← TO CREATE in Story 3.5
+- tests/pipeline/strategies/test_factory.py   ← TO CREATE in Story 3.5
+- tests/pipeline/test_prompt_builder.py       ← TO CREATE in Story 3.6
+- tests/pipeline/strategies/test_single_call.py ← TO CREATE in Story 3.6
+- tests/pipeline/test_intent_guard.py         ← TO CREATE in Story 3.7
+- tests/pipeline/test_orchestrator.py         ← TO CREATE in Story 3.7
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
+- tests/pipeline/strategies/__init__.py ← TO CREATE in Story 3.5
+
+---
+
+## Pre-Implementation Design Decisions (LLM)
+
+All decisions below were made before Story 3.5 implementation began.
+Full detail in architecture document v1.6 (Sections 2, 6, 7, 8, 10, 12, 13, 16).
+These bullets move to Key Decisions Made as each story completes.
+
+- QueryContext: intent_output + mapping_output removed → single llm_output field (Story 3.5)
+- NLToIRStrategy ABC + NLToIRStrategyFactory — Strategy pattern mirrors LLMProviderFactory (Story 3.5)
+- UnknownStrategyError + UNKNOWN_STRATEGY error code added (Story 3.5)
+- context_validator.py refactored — SchemMapperRequirements deleted, IntentExtractorRequirements
+  renamed to NLToIRRequirements, ValidatorRequirements updated to require llm_output (Story 3.5)
+- SingleCallStrategy — single LLM call, simplified IR, built once at construction (Story 3.6)
+- prompts.yaml — sectioned structure assembled by PromptBuilder at startup (Story 3.6)
+- PromptBuilder — validate() + build_system_prompt() + render_user_prompt() (Story 3.6)
+- settings.base.yaml: new keys llm.nl_to_ir_strategy + llm.prompt_example_set (Story 3.6)
+- Simplified IR shape: tables/columns/filters each with source field + limit/aggregation/sort (Story 3.6)
+  aggregation and sort captured in Phase 1 but NOT executed until Phase 2
+- Intent Guard — deterministic keyword check before any LLM call (Story 3.7)
+  Called from every endpoint accepting nl_query_original — single function, multiple callers
+- Partial orchestrator wired: App Identifier → Intent Guard → NL-to-IR Strategy (Story 3.7)
+- Source-driven hierarchy role assignment — LLM never produces roles, validator derives from
+  source field matched against schema hierarchy synonyms (Story 4.3 Join Resolver)
+- Foundry endpoints: /v1/tools/intent-extractor + /v1/tools/schema-mapper removed,
+  /v1/tools/nl-to-ir added (Story 4.1)
+- Log stages: INTENT_GUARD_RESULT + LLM_OUTPUT replace LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT
+- Story restructure: 3.5, 3.6, 3.7 (new) + Sprint 4 renumbered 4.1-4.6
+  (see architecture document Section 16.2 for full story definitions)
+
+---
 
 ## Key Decisions Made
 
@@ -367,9 +401,6 @@ Sprint 3 — LLM Layer
 - request_id excluded from all stage validation — always guaranteed by Pydantic
 - app_id="" is correct "not yet populated" state — app-identifier and query stages
   intentionally do NOT require app_id because they are the ones that produce it
-- app-identifier and query (full pipeline) are stateless — agent sends "" app_id,
-  stage fills it in, returns populated context. Same behaviour for both user-facing
-  pipeline and Foundry tool scenario.
 - MissingContextFieldsError carries missing_fields: list[str] — inspect directly
 - feedback_tool.py Phase 3 placeholder — 501. Router registered in app.py.
 - Architecture document updated to version 1.4
@@ -382,25 +413,21 @@ Sprint 3 — LLM Layer
 - Internal errors (schema_repo=None, unexpected) → HTTP 500
 - sql=None and total_tokens_used=0 until pipeline stages wired in later sprints
 - REQUEST_RECEIVED log emitted immediately on entry with caller="user"
+
 ### Logger Tech Debt (flagged 2.6)
-- StructuredLogger has no Strategy pattern — switching log destination
-  requires a code change
-- Should be refactored to LogWriter ABC + factory + config key
-  (logging.writer: jsonl_file) before Phase 2
+- StructuredLogger has no Strategy pattern — switching log destination requires a code change
+- Should be refactored to LogWriter ABC + factory + config key before Phase 2
 - Tracked as tech debt — not blocking Phase 1
 
 ### LLM Base & Factory (3.1)
 - LLMProvider is an ABC — cannot be instantiated directly
 - All providers are synchronous — def not async def. uvicorn handles concurrency.
 - MockLLMProvider uses a responses list — call order determines which response returned.
-  This directly maps to the two-step LLM pattern (intent → mapping).
 - Tests construct MockLLMProvider directly with specific responses.
-  Factory-created mock uses a single placeholder response ["mock_response"] —
+- Factory-created mock uses a single placeholder response ["mock_response"] —
   only used when provider=mock in config, not in tests.
 - Real providers use lazy imports inside create() — provider files can be absent
   during early stories without breaking any existing imports or tests.
-- C3, C4, C5 marked pytest.mark.skip — will be activated in Stories 3.2 and 3.3
-  as each provider is built.
 - UnknownProviderError added to exceptions.py (V3) and UNKNOWN_PROVIDER
   added to constants.py (V2).
 
@@ -423,17 +450,16 @@ Sprint 3 — LLM Layer
     Flagged as tech debt — future story should move to settings.llm.anthropic_model.
 - Anthropic API shape differs from OpenAI — system is top-level, response at content[0].text.
 - Both providers follow identical retry loop pattern as OpenAIProvider.
-- test_factory.py _make_settings() now carries all provider credentials — safe to call
-    for any provider without triggering missing-credential ValueError.
+- test_factory.py _make_settings() now carries all provider credentials.
 
 ### Schema Summary Builder (3.4)
-- build_schema_summary() is a helper — not a pipeline stage. Called inside
-  run_schema_mapper() (Story 4.1), not directly by the orchestrator.
+- build_schema_summary() is a pure helper function — not a pipeline stage.
+  Called inside SingleCallStrategy.execute() (Story 3.6), not directly by the orchestrator.
 - Junction tables excluded from summary — LLM must never propose them.
 - Table format: table: Major.Customer [synonym1, synonym2]
 - Column format with synonyms: CustomerCID [Customer id, Customer cid]
 - Column format without synonyms: CustomerID (plain name, no brackets)
-- Table with no synonyms: table: Major.SomeTable [] (empty brackets — Option A)
+- Table with no synonyms: table: Major.SomeTable [] (empty brackets)
 - Column types, business rules, versioning config excluded from summary.
 - is_identifier and is_default_text flags NOT included — flagged for Phase 2.
 - Token budget: output under 4,800 characters (~1,200 tokens at ~4 chars/token).
@@ -443,6 +469,8 @@ Sprint 3 — LLM Layer
 - SchemaLoadError calls fixed from SchemaLoadError(code=..., message=...)
   to SchemaLoadError(message=...) — code auto-injected from constants
 
+---
+
 ## Architecture Document Updates Made
 
 ### Story 1.6
@@ -451,15 +479,17 @@ Sprint 3 — LLM Layer
 - Section 17 Phase 3: Background scheduler rotation added
 
 ### Story 2.5 (Architecture v1.4)
-- Section 6.4: Required fields table corrected — request_id removed from all stages;
-  note added explaining Pydantic auto-generation
+- Section 6.4: Required fields table corrected — request_id removed from all stages
 - Section 10.1: POST /v1/tools/feedback added as TODO Phase 3 (returns 501)
 - Section 3.1: feedback_tool.py and test_feedback_tool.py added to file tree
 - Section 2.2: New subsection — Design Patterns
-  (Strategy, Factory, Repository, Dependency Injection,
-   Template Method, Single Responsibility, Open/Closed)
 - Section 17 Phase 3: Foundry feedback endpoint added to scope
 - Change log: version 1.4 row added
 
 ### Story 2.6 (Architecture v1.5)
-- Added sub-sectin 2.3 Tech Debt under section 2 Tehnical Decisions.
+- Added sub-section 2.3 Tech Debt under section 2 Technical Decisions.
+
+### Pre-Story 3.5 (Architecture v1.6)
+- Full LLM layer redesign documented across all sections
+- See architecture document v1.6 (consolidated from PART1 + PART2 + PART3 md files)
+- Key sections changed: 2, 3.1, 4, 6, 7, 8, 10, 12, 13, 14, 16, 17
