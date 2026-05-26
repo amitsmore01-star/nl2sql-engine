@@ -1,13 +1,17 @@
 # src/api/app.py
 # V0 - Initial implementation
 # V1 - Story 2.6: Registered query router (POST /v1/query) under prefix="/v1".
+# V2 - Story 3.7: Added LLM provider initialisation at startup.
+#                 app.state.llm_provider and app.state.llm_provider_ok now set.
+#                 Orchestrator and tool endpoints read llm_provider from app.state.
 #
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
 #   1. Loads settings (YAML + .env)
 #   2. Loads schemas from disk into SchemaRepository
 #   3. Validates schemas via SchemaValidator
-#   4. Stores all results on app.state for health endpoints to read
+#   4. Initialises the LLM provider via LLMProviderFactory
+#   5. Stores all results on app.state for health endpoints and pipeline to read
 #
 # Usage:
 #   app = create_app()                        # uses settings.app.schema_dir
@@ -22,6 +26,7 @@ from src.config.settings import load_settings
 from src.schema.schema_repository import SchemaRepository
 from src.schema.schema_validator import SchemaValidator
 from src.core.exceptions import SchemaLoadError
+from src.llm.factory import LLMProviderFactory
 
 
 def create_app(schema_dir: str | Path | None = None) -> FastAPI:
@@ -55,6 +60,8 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
         app.state.schema_repo = None
         app.state.schemas_loaded_ok = False
         app.state.schemas_valid_ok = False
+        app.state.llm_provider = None
+        app.state.llm_provider_ok = False
         app.state.startup_error = None
         app.state.schema_dir = None
 
@@ -106,6 +113,22 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
         except SchemaLoadError as exc:
             app.state.startup_error = exc.message
             app.state.schemas_valid_ok = False
+            yield
+            return
+
+        # ----------------------------------------------------------------
+        # Step 5 — Initialise LLM provider
+        # LLMProviderFactory reads settings.llm.provider to pick the right
+        # provider class. In dev/test this will be MockLLMProvider.
+        # Tests override app.state.llm_provider directly after startup.
+        # ----------------------------------------------------------------
+        try:
+            llm_provider = LLMProviderFactory.create(settings)
+            app.state.llm_provider = llm_provider
+            app.state.llm_provider_ok = True
+        except Exception as exc:
+            app.state.startup_error = f"LLM provider init failed: {exc}"
+            app.state.llm_provider_ok = False
             yield
             return
 

@@ -18,19 +18,25 @@
 - 3.3 ✅ Azure OpenAI + Anthropic Provider
 - 3.4 ✅ Schema Summary Builder (all tests passing)
 - 3.5 ✅ NL-to-IR Strategy Scaffold + QueryContext Refactor (all tests passing)
+- 3.6 ✅ Single-Call Strategy + Prompt Assembly
+- 3.7 ✅ Partial Pipeline Wire-up + Intent Guard 
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
 Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
+Sprint 3 — LLM Layer ✅ COMPLETE
 
 ## Current Sprint
 Sprint 3 — LLM Layer
 
 ## Current Story
-3.6 — Single-Call Strategy + Prompt Assembly ✅ COMPLETE
+3.7 — Partial Pipeline Wire-up + Intent Guard ✅ COMPLETE
+
+## Next Sprint
+Sprint 4 — Schema Mapping & Validation
 
 ## Next Story
-3.7 — Partial Pipeline Wire-up + Intent Guard
+4.1 — NL-to-IR Tool Endpoint
 
 ## Files Built So Far
 
@@ -119,6 +125,9 @@ Sprint 3 — LLM Layer
                                     ← updated in 1.6 (log_dir path fixed)
                                     ← V1 in 2.5 (registered feedback_tool router)
                                     ← V1. Registered query_router with prefix="/v1".
+                                    ← V2. Added Step 5 — LLM provider initialisation
+                                      via LLMProviderFactory. app.state.llm_provider and
+                                      app.state.llm_provider_ok now set at startup.
 
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
@@ -175,9 +184,14 @@ Sprint 3 — LLM Layer
                                       Returns temporary full QueryContext response shape.
                                       TODO marker added — Story 5.4 replaces with final
                                       QueryResponse shape.
-                                    ← TO UPDATE in Story 5.4: V2 — replace temporary
-                                      QueryContext response with final QueryResponse shape.
-                                      Remove TODO marker.
+                                    ← V1. Replaced direct run_app_identifier() call with
+                                      run_pipeline() (orchestrator). Reads llm_provider
+                                      from app.state. Response is now full QueryContext dict
+                                      (temporary shape). REQUEST_RECEIVED log now emitted
+                                      inside orchestrator — removed duplicate emit from V0.
+                                      Business error except blocks removed — orchestrator
+                                      handles them internally. TODO marker added for Story 5.4.
+
 
 - src/validator/app_identifier.py   ← new in 2.2
                                       V1. Bug fix: logger.log() now receives
@@ -232,6 +246,12 @@ Sprint 3 — LLM Layer
                                       Column types, business rules, versioning excluded.
                                       Token budget: under 4,800 characters (~1,200 tokens).
                                       Output is deterministic — same input, same output.
+- src/pipeline/intent_guard.py      ← NEW V0. run_intent_guard(context, logger).
+                                      Whole-word case-insensitive keyword scan.
+                                      Blocked keywords: DELETE, DROP, UPDATE,INSERT,TRUNCATE, ALTER, CREATE.
+                                      Sets context.status="failed" + context.error on block.
+                                      Emits INTENT_GUARD_RESULT log (passed + keywords_detected).
+                                      Does not raise — always returns context. 
 
 - src/pipeline/strategies/__init__.py ← NEW V0. Story 3.5
 - src/pipeline/strategies/base.py     ← NEW V0. Story 3.5 NLToIRStrategy ABC. Two abstract methods: execute() and strategy_name().
@@ -252,7 +272,15 @@ Sprint 3 — LLM Layer
                                           validate() checks: broken example set references,
                                           missing placeholders, incorrect/why_wrong pairing.
 - src/pipeline/intent_guard.py          ← TO CREATE in Story 3.7
-- src/pipeline/orchestrator.py          ← TO CREATE in Story 3.7 (V0 — partial)
+- src/pipeline/orchestrator.py          ← NEW V0. run_pipeline(context, schema_repo,
+                                          llm_provider, logger, settings).
+                                          Chains: App Identifier → Intent Guard → NL-to-IR Strategy.
+                                          AppNotDeterminedError + MultipleAppsMatchedError caught
+                                          here and converted to context failures.
+                                          schema_repo.get_schema() failure caught defensively.
+                                          Stops early if any stage sets context.status="failed".
+                                          Emits REQUEST_RECEIVED log with caller="user".
+                                          TODO (Story 5.4): add validator + SQL builder stages.
                                         ← TO UPDATE in Story 5.4 (V1 — final)
 
 ### Tests
@@ -284,8 +312,11 @@ Sprint 3 — LLM Layer
 - tests/api/test_auth.py                    ← new in 2.4 (A1-A5, B1-B5, C1-C3, D1-D2)
 - tests/api/v1/test_query.py                ← NEW V0. 15 tests: A1-A3 auth, B1-B5 validation,
                                               C1-C4 success, D1-D2 business errors, E1 internal.
-                                            ← TO UPDATE in Story 3.7: V1 — updated for orchestrator
-                                            ← TO UPDATE in Story 5.4: V2 — final response shape
+                                            ← V1. Groups A+B unchanged. Groups C, D, E
+                                              rewritten for QueryContext response shape.
+                                              MockLLMProvider injected into app.state after
+                                              lifespan startup for success-path tests.
+                                              D3 added: UNSUPPORTED_INTENT test.
 
 - tests/api/tools/test_context_validator.py ← new in 2.5
                                               Groups: A1-A6, B1-B5, C1-C2, D1-D4, E1-E2, F1-F4
@@ -308,8 +339,14 @@ Sprint 3 — LLM Layer
 - tests/pipeline/strategies/test_factory.py   ← NEW V0. in Story 3.5 5 tests: B1-B4 + B1 extended.
 - tests/pipeline/test_prompt_builder.py       ← NEW V0. 16 tests: A1, B1-B5, C1-C5, D1-D3.
 - tests/pipeline/strategies/test_single_call.py← NEW V0. 13 tests: A1-A3, B1-B7, C1-C3.
-- tests/pipeline/test_intent_guard.py         ← TO CREATE in Story 3.7
-- tests/pipeline/test_orchestrator.py         ← TO CREATE in Story 3.7
+- tests/pipeline/test_intent_guard.py         ← NEW V0. 16 tests: pass-through (A1, A9, A10 +
+                                                partial-word variants), block (A2-A8 + case variants),
+                                                logging (A11 pass + block + request_id).
+- tests/pipeline/test_orchestrator.py         ← NEW V0. 5 tests: B1 all three stages run,
+                                                B2 non-select stops at Intent Guard,
+                                                B3 unknown app stops at App Identifier,
+                                                B4 status=success on clean run,
+                                                B5 app_id populated after valid run.
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -528,6 +565,32 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - aggregation and sort captured in IR but NOT executed by SQL builder in Phase 1 — Phase 2.
 - factory.py V1: SingleCallStrategy now registered. registered_strategies() returns
   ["single_call"]. Was empty list in V0.
+
+
+### Partial Pipeline Wire-up + Intent Guard (3.7)
+- Intent Guard: whole-word \b regex, case-insensitive, does not raise — sets
+  context.status="failed" and returns. Emits INTENT_GUARD_RESULT always.
+- Blocked keywords: DELETE, DROP, UPDATE, INSERT, TRUNCATE, ALTER, CREATE.
+  REMOVE and CANCEL excluded — not SQL keywords, would cause false positives.
+- Partial words (deleted, updates, created) correctly pass — \b boundary handles this.
+- Orchestrator catches AppNotDeterminedError + MultipleAppsMatchedError from
+  run_app_identifier() and converts to context failures. Callers never see raw
+  business exceptions — always receive a context object.
+- run_pipeline() signature: (context, schema_repo, llm_provider, logger, settings).
+  settings required by NLToIRStrategyFactory to select strategy and example set.
+- REQUEST_RECEIVED log emitted inside run_pipeline() with caller="user".
+  query.py V0 duplicate emit removed in V1.
+- app.state.llm_provider set at startup in app.py V2 via LLMProviderFactory.
+  Tests inject MockLLMProvider into app.state after lifespan startup fires.
+- query.py response shape: temporary full QueryContext dict. Final QueryResponse
+  shape wired in Story 5.4. TODO marker in query.py flags this explicitly.
+- Business errors return HTTP 200 with context.status="failed" and context.error
+  dict (code + message). Not errors[] list — that is the final QueryResponse shape.
+- HTTP 500 only for unexpected exceptions (RuntimeError etc.) that escape run_pipeline().
+
+### Working Rule Reminder (3.7)
+- Before writing any code, ask for ALL files the new code depends on that have
+  not been seen this session. One upload request upfront. No exceptions.
 
 ### Bug Fix (schema_repository.py — 2.4)
 - SchemaLoadError calls fixed from SchemaLoadError(code=..., message=...)
