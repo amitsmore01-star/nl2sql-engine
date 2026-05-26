@@ -2,6 +2,10 @@
 # V0 - Initial implementation
 # V1 - Story 3.5: Replaced intent_output + mapping_output with single llm_output field.
 #      llm_output holds the full simplified IR from the NL-to-IR Strategy (arch v1.6).
+# V2 - Story 4.2: Changed resolved_tables, resolved_columns, resolved_filters from
+#      list[str] to list[dict]. Each entry preserves the full dict from llm_output
+#      (including source field) so join resolver and rule applicator have full context.
+#      resolved_joins remains list[str] — join resolver populates it in Story 4.3.
 #
 # Shared Pydantic models used across the entire nl2sql-engine pipeline.
 #
@@ -184,17 +188,29 @@ class QueryContext(BaseModel):
     # Replaced intent_output + mapping_output from architecture v1.5 and earlier.
 
     # --- Validator outputs ---
-    resolved_tables: list[str] = Field(default_factory=list)
-    # Confirmed table names after validation.
+    resolved_tables: list[dict[str, Any]] = Field(default_factory=list)
+    # Validated table entries from llm_output.tables.
+    # Each entry is a full dict: {"table": "Major.Customer", "source": "customer"}
+    # Preserves duplicates (e.g. Major.Acc twice for self-join) so join resolver
+    # can use the source field to assign hierarchy roles (top_acc, sub_acc).
+    # Changed from list[str] in V2 — list[str] lost source, breaking hierarchy.
 
-    resolved_columns: list[str] = Field(default_factory=list)
-    # Confirmed column names after validation.
+    resolved_columns: list[dict[str, Any]] = Field(default_factory=list)
+    # Validated column entries from llm_output.columns.
+    # Each entry is a full dict: {"table": "Major.CustomerDemographics",
+    #                              "column": "CustomerName", "source": "customer name"}
+    # Table-qualified to avoid ambiguity when two tables share a column name.
+    # Changed from list[str] in V2 — same reason as resolved_tables.
 
-    resolved_filters: list[str] = Field(default_factory=list)
-    # Confirmed filter conditions after validation.
+    resolved_filters: list[dict[str, Any]] = Field(default_factory=list)
+    # Validated filter entries from llm_output.filters.
+    # Each entry is a full dict: {"table": "Major.Customer", "column": "CustomerCID",
+    #                              "operator": "=", "value": "ASA", "source": "..."}
+    # Changed from list[str] in V2 — rule applicator needs full dict in Story 4.4.
 
     resolved_joins: list[str] = Field(default_factory=list)
-    # Join graph result after join resolution.
+    # Join graph result — populated by join resolver in Story 4.3.
+    # Kept as list[str] for now; join resolver will define the final shape.
 
     applied_rules: list[str] = Field(default_factory=list)
     # Business rules injected by the rule applicator.

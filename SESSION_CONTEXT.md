@@ -21,6 +21,7 @@
 - 3.6 ✅ Single-Call Strategy + Prompt Assembly
 - 3.7 ✅ Partial Pipeline Wire-up + Intent Guard
 - 4.1 ✅ NL-to-IR Tool Endpoint (all tests passing)
+- 4.2 ✅ Table & Column Validator (all tests passing)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -31,11 +32,10 @@ Sprint 3 — LLM Layer ✅ COMPLETE
 Sprint 4 — Schema Mapping & Validation
 
 ## Current Story
-## Current Story
-4.1 — NL-to-IR Tool Endpoint ✅ COMPLETE
+4.2 — Table & Column Validator ✅ COMPLETE
 
 ## Next Story
-4.2 — Table & Column Validator
+4.3 — Join Resolver
 
 ## Files Built So Far
 
@@ -127,6 +127,12 @@ Sprint 4 — Schema Mapping & Validation
                                       Added single llm_output: Optional[dict[str, Any]] = None.
                                       Added total_latency_ms: int = 0 field.
                                       Holds full simplified IR from NL-to-IR Strategy.
+                                    ← V2. Changed resolved_tables, resolved_columns,
+                                      resolved_filters from list[str] to list[dict].
+                                      Each entry preserves full dict from llm_output
+                                      (including source field) so join resolver and
+                                      rule applicator have full context.
+                                      resolved_joins remains list[str] for now.
 
 - src/core/logging/log_models.py    ← new in 1.6
 - src/core/logging/logger.py        ← new in 1.6
@@ -212,13 +218,21 @@ Sprint 4 — Schema Mapping & Validation
                                       handles them internally. TODO marker added for Story 5.4.
 
 
-- src/validator/app_identifier.py   ← new in 2.2
-                                      V1. Bug fix: logger.log() now receives
-                                      LogEntry(...) object, not keyword arguments.
-                                    ← V2. Bug fix (reverted): get_all_schemas()
-                                      returns list[AppSchema] in the real codebase.
-                                      Reverted to list iteration pattern manually.
-                                      Final state: list-based iteration kept throughout.
+  - src/validator/app_identifier.py       ← new in 2.2
+                                            V1. Bug fix: logger.log() now receives
+                                            LogEntry(...) object, not keyword arguments.
+                                          ← V2. Bug fix (reverted): get_all_schemas()
+                                            returns list[AppSchema] in the real codebase.
+                                            Reverted to list iteration pattern manually.
+                                            Final state: list-based iteration kept throughout.
+- src/validator/table_column_validator.py ← NEW V0.
+                                            run_table_column_validator(context, schema_repo, logger).
+                                            Validates llm_output.tables and llm_output.columns
+                                            against schema. Junction tables rejected even if in
+                                            schema. Table check runs first — failure stops column
+                                            check. Populates resolved_tables and resolved_columns
+                                            with full dicts (source preserved). Emits
+                                            VALIDATION_RESULT log on success.                                      
 
 - src/llm/base.py                   ← NEW V0. LLMProvider ABC.
                                       Two abstract methods: complete() and provider_name().
@@ -344,7 +358,18 @@ Sprint 4 — Schema Mapping & Validation
                                             ← V1. Added C1-C5 for llm_output field.Removed all intent_output/mapping_output refs.
 - tests/core/test_constants.py              ← new in 2.1
 - tests/core/test_exceptions.py             ← new in 2.1
+
 - tests/validator/test_app_identifier.py    ← new in 2.2
+- tests/validator/conftest.py               ← NEW V0. Fixtures: abc_schema_repo (session-scoped,
+                                                loads real ABC_app.json), capturing_logger
+                                                (in-memory CapturingLogger for log assertions),
+                                                test_logger (real StructuredLogger writing to
+                                                tmp_path — never touches project logs/).
+- tests/validator/test_table_column_validator.py ← NEW V0. 13 tests:
+                                                  A1-A4 table happy path, B1-B3 table failure,
+                                                  C1-C3 column happy path, D1-D3 column failure,
+                                                  E1-E3 ordering and logging. 
+
 - tests/api/test_models.py                  ← new in 2.3
 - tests/api/test_auth.py                    ← new in 2.4 (A1-A5, B1-B5, C1-C3, D1-D2)
 - tests/api/v1/test_query.py                ← NEW V0. 15 tests: A1-A3 auth, B1-B5 validation,
@@ -659,6 +684,26 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - REQUEST_RECEIVED log emitted with caller="foundry" — distinguishes tool
   endpoint calls from user-facing /v1/query calls in the log file.
 
+### Table & Column Validator (4.2)
+- resolved_tables and resolved_columns changed from list[str] to list[dict]
+  in models.py V2. Stores full llm_output entry dicts including source field.
+  list[str] would have lost source, breaking hierarchy role assignment in
+  Story 4.3 (join resolver matches source against schema hierarchy synonyms).
+- resolved_filters also changed to list[dict] in same V2 update — same
+  reasoning, avoids a breaking change mid-Story 4.4.
+- Table matching is exact name only (e.g. "Major.Customer") — not synonyms.
+  LLM sees real table names in schema summary and echoes them back.
+  Synonyms are for App Identifier only (free-form user text → app).
+- Junction tables rejected even if name is valid in schema. LLM must never
+  propose them — join resolver auto-bridges them in Story 4.3.
+- Table validation runs before column validation. Any invalid table raises
+  NoRelevantTablesError immediately — column check never runs.
+- Self-join duplicates (Major.Acc twice) preserved in resolved_tables —
+  both entries kept so join resolver can read source for role assignment.
+- CapturingLogger pattern introduced in tests/validator/conftest.py —
+  in-memory logger for asserting log stage and payload without file I/O.
+  Will be reused in all subsequent validator test stories.
+  
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
