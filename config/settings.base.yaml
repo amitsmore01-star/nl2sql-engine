@@ -19,7 +19,7 @@ api:
 
 llm:
   provider: mock
-  max_tokens: 1000
+  max_tokens: 3000
   timeout_seconds: 30
   retry_max: 3
   retry_backoff_seconds: 2

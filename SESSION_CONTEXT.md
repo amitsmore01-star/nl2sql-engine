@@ -59,6 +59,12 @@ Sprint 4 — Schema Mapping & Validation
 - config/prompts.yaml               ← NEW V0. Sectioned prompt definitions.Three examples: hierarchy_with_filter,
                                       filter_only_customer, aggregation_with_limit.example_sets: default (3 examples) + minimal (1).
                                       user_template contains <SCHEMA_SUMMARY> + <USER_QUERY>.
+                                     ← TO UPDATE. Add strict synonym matching rule to rules.tables section. Add strict_synonym_matching
+                                      example. Add to default example_set.
+- config/mock_responses.json        ← NEW V0. Mock LLM responses for JSON mode.
+                                      Each entry has user_input (exact match string) and
+                                      llm_response (IR JSON string). First entry:
+                                      "give me topaccount name for customer ASA".
 
 ### Schemas
 - schemas/ABC_app.json
@@ -221,6 +227,14 @@ Sprint 4 — Schema Mapping & Validation
                                       In tests, responses[0] = canned simplified IR JSON string.
                                       Empty list → ValueError at construction.
                                       More calls than responses → ValueError at call time.
+                                    ← V1. Added JSON file mode alongside existing list mode.
+                                      Constructor now accepts optional responses= list (old mode,
+                                      unchanged) or no argument (new mode — loads from
+                                      config/mock_responses.json). JSON mode extracts user query
+                                      by splitting user_prompt on "User query:" label, matches
+                                      exactly against user_input entries in JSON file.
+                                      No match → ValueError. File missing/invalid → ValueError
+                                      at construction time.
 
 - src/llm/factory.py                ← NEW V0. LLMProviderFactory.
                                       Static method: LLMProviderFactory.create(settings)
@@ -343,11 +357,13 @@ Sprint 4 — Schema Mapping & Validation
 
 - tests/llm/test_base.py                    ← NEW V0. 3 tests: A1-A3.
 - tests/llm/test_mock_provider.py           ← NEW V0. 6 tests: B1-B6.
+                                            ← V1. Added J1-J6 JSON mode scenarios alongside existing B1-B6 list mode tests. J tests use
+                                              monkeypatch to redirect _MOCK_RESPONSES_PATH to tmp_path — never touch real config/mock_responses.json.
 - tests/llm/test_factory.py                 ← NEW V0. 9 tests: C1-C7 (all passing after V2).
 - tests/llm/test_openai_provider.py         ← NEW V0. 8 tests: D1-D8.
 - tests/llm/test_azure_openai_provider.py   ← NEW V0. 11 tests: E1-E11.
 - tests/llm/test_anthropic_provider.py      ← NEW V0. 8 tests: F1-F8.
-- tests/llm/test_azure_foundry_provider.py ← NEW V0. 11 tests: F1-F11. F11 is unique — verifies "model" field in request body (key Foundry difference).
+- tests/llm/test_azure_foundry_provider.py  ← NEW V0. 11 tests: F1-F11. F11 is unique — verifies "model" field in request body (key Foundry difference).
 - tests/pipeline/test_schema_summary.py     ← NEW V0. 10 tests: A1-A6, B1, C1-C4.
 - tests/pipeline/strategies/__init__.py       ← NEW V0. in Story 3.5
 - tests/pipeline/strategies/test_base.py      ← NEW V0. in Story 3.5 5 tests: A1-A4 + A2 extended.
@@ -603,6 +619,22 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
   dict (code + message). Not errors[] list — that is the final QueryResponse shape.
 - HTTP 500 only for unexpected exceptions (RuntimeError etc.) that escape run_pipeline().
 
+### Mock Provider JSON Mode (between 3.6 and 3.7)
+- Option B chosen — both modes coexist. responses=[] → list mode (unchanged).
+  No argument → JSON file mode (new).
+- JSON file hardcoded at config/mock_responses.json — single location, always known.
+- Matching is exact and case-sensitive — "clients" never matches synonym "customer".
+- Extraction splits user_prompt on "User query:" label (fixed text from user_template
+  in prompts.yaml). maxsplit=1 ensures only first occurrence used.
+- File missing or invalid JSON → ValueError at construction time — fails fast.
+- No match found → ValueError at complete() time — same behaviour as list mode exhaustion.
+- _MOCK_RESPONSES_PATH and _USER_QUERY_LABEL are module-level constants — monkeypatched
+  in tests so real file is never touched by test suite.
+- prompts.yaml: strict synonym matching rule needed in rules.tables — LLM must only
+  match user terms against display name or synonyms[], never semantic similarity.
+  Negative example added: "clients" must not map to Major.Customer.
+  Example name: strict_synonym_matching. Added to default example_set.
+
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
@@ -651,4 +683,3 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Full LLM layer redesign documented across all sections
 - See architecture document v1.6 (consolidated from PART1 + PART2 + PART3 md files)
 - Key sections changed: 2, 3.1, 4, 6, 7, 8, 10, 12, 13, 14, 16, 17
-
