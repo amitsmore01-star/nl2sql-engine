@@ -7,6 +7,8 @@
 #      and prompt_example_set in LLMSettings (Story 3.6, architecture v1.6)
 #      Added prompts.yaml loading — attached as settings.prompts (PromptSpec)
 #      Service refuses to start if prompts.yaml is missing or structurally invalid
+# V3 - Added azure_foundry_endpoint, azure_foundry_api_key,
+#      azure_foundry_deployment_name credential fields for Azure AI Foundry provider
 #
 # Single source of truth for all configuration.
 # This is the ONLY file that reads YAML files or environment variables.
@@ -116,11 +118,22 @@ class Settings(BaseModel):
     foundry_api_key: Optional[str] = None
 
     # Optional LLM secrets — present only when provider needs them
+
+    # OpenAI
     openai_api_key: Optional[str] = None
+
+    # Azure OpenAI Service (existing — *.openai.azure.com)
     azure_openai_endpoint: Optional[str] = None
     azure_openai_api_key: Optional[str] = None
     azure_openai_deployment_name: Optional[str] = None
     azure_openai_api_version: Optional[str] = None
+
+    # Azure AI Foundry (new — *.services.ai.azure.com/openai/v1)
+    azure_foundry_endpoint: Optional[str] = None
+    azure_foundry_api_key: Optional[str] = None
+    azure_foundry_deployment_name: Optional[str] = None
+
+    # Anthropic
     anthropic_api_key: Optional[str] = None
 
     # Prompts — loaded separately from prompts.yaml.
@@ -314,6 +327,9 @@ def load_settings(config_dir: str | Path | None = None) -> Settings:
         "azure_openai_api_key",
         "azure_openai_deployment_name",
         "azure_openai_api_version",
+        "azure_foundry_endpoint",
+        "azure_foundry_api_key",
+        "azure_foundry_deployment_name",
         "anthropic_api_key",
     ]
     for secret in _optional_llm_secrets:

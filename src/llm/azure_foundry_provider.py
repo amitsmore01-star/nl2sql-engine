@@ -1,19 +1,26 @@
-# src/llm/azure_openai_provider.py
+# src/llm/azure_foundry_provider.py
 # V0 - Initial implementation
 #
-# AzureOpenAIProvider — calls the Azure OpenAI Chat Completions API.
+# AzureFoundryProvider — calls the Azure AI Foundry Chat Completions API.
 #
 # Design:
 #   - Implements LLMProvider ABC — complete() and provider_name().
 #   - Synchronous — uses httpx.Client (blocking). No async.
 #   - Retry loop with exponential backoff on HTTP errors and timeouts.
 #   - All config (timeout, retry_max, backoff) read from settings — zero hardcoding.
-#   - URL built at runtime from endpoint + deployment + api_version — never hardcoded.
-#   - Raises ValueError at construction if any required Azure credential is missing.
+#   - URL built at construction time from endpoint only — no deployment in URL.
+#   - Model (deployment) name sent in request body — this is the Foundry pattern.
+#   - Raises ValueError at construction if any required credential is missing.
 #   - Raises LLMOutputParseError if all retries are exhausted.
 #
-# Azure OpenAI URL pattern:
-#   {endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version={api_version}
+# Azure AI Foundry URL pattern:
+#   {endpoint}/chat/completions
+#   e.g. https://<name>-foundry.services.ai.azure.com/openai/v1/chat/completions
+#
+# Key difference from AzureOpenAIProvider:
+#   - No deployment name or api-version in the URL
+#   - Model name goes in the request body as "model" field
+#   - Endpoint already includes the /openai/v1 path — stored as-is
 
 import time
 
@@ -23,59 +30,58 @@ from src.llm.base import LLMProvider
 from src.core.exceptions import LLMOutputParseError
 from src.config.settings import Settings
 
-# Path template — endpoint and query param are injected at construction time
-_URL_TEMPLATE = "{endpoint}/openai/deployments/{deployment}/chat/completions"
+# Foundry appends /chat/completions to the base endpoint
+_CHAT_PATH = "/chat/completions"
 
 
-class AzureOpenAIProvider(LLMProvider):
+class AzureFoundryProvider(LLMProvider):
     """
-    LLM provider that calls the Azure OpenAI Chat Completions API.
+    LLM provider that calls the Azure AI Foundry Chat Completions API.
 
-    The Azure OpenAI API is compatible with the OpenAI Chat Completions shape
-    but uses a different URL structure and authenticates via Ocp-Apim-Subscription-Key
-    (or api-key header) rather than a Bearer token.
+    Azure AI Foundry exposes an OpenAI-compatible endpoint but differs from
+    Azure OpenAI Service in two ways:
+      1. The URL does not include the deployment name — it is flat /chat/completions
+      2. The model (deployment) name is passed in the request body as "model"
+
+    Auth uses the same api-key header as Azure OpenAI — no bearer token needed.
 
     Args:
         settings: Loaded Settings object. Reads:
-                    settings.azure_openai_endpoint          — base URL
-                    settings.azure_openai_api_key           — API key
-                    settings.azure_openai_deployment_name   — deployment name
-                    settings.azure_openai_api_version       — API version string
-                    settings.llm.timeout_seconds            — per-call timeout
-                    settings.llm.retry_max                  — max attempts
-                    settings.llm.retry_backoff_seconds      — base backoff (exponential)
-                    settings.llm.max_tokens                 — max tokens in response
+                    settings.azure_foundry_endpoint        — full base URL
+                                                             (e.g. https://<name>.services.ai.azure.com/openai/v1)
+                    settings.azure_foundry_api_key         — static API key
+                    settings.azure_foundry_deployment_name — model/deployment name (e.g. gpt-4o-mini)
+                    settings.llm.timeout_seconds           — per-call timeout
+                    settings.llm.retry_max                 — max attempts
+                    settings.llm.retry_backoff_seconds     — base backoff (exponential)
+                    settings.llm.max_tokens                — max tokens in response
 
     Raises:
-        ValueError: At construction if any required Azure credential is missing.
+        ValueError: At construction if any required credential is missing.
     """
 
     def __init__(self, settings: Settings) -> None:
-        # Validate all required Azure credentials up front — fail fast
+        # Validate all required Foundry credentials up front — fail fast
         missing = []
-        if not settings.azure_openai_endpoint:
-            missing.append("AZURE_OPENAI_ENDPOINT")
-        if not settings.azure_openai_api_key:
-            missing.append("AZURE_OPENAI_API_KEY")
-        if not settings.azure_openai_deployment_name:
-            missing.append("AZURE_OPENAI_DEPLOYMENT_NAME")
-        if not settings.azure_openai_api_version:
-            missing.append("AZURE_OPENAI_API_VERSION")
+        if not settings.azure_foundry_endpoint:
+            missing.append("AZURE_FOUNDRY_ENDPOINT")
+        if not settings.azure_foundry_api_key:
+            missing.append("AZURE_FOUNDRY_API_KEY")
+        if not settings.azure_foundry_deployment_name:
+            missing.append("AZURE_FOUNDRY_DEPLOYMENT_NAME")
 
         if missing:
             raise ValueError(
-                f"Azure OpenAI provider is missing required setting(s): "
+                f"Azure AI Foundry provider is missing required setting(s): "
                 f"{', '.join(missing)}. "
                 f"Add them to your .env file."
             )
 
-        # Build the full URL once at construction — reused on every call
-        base_url = _URL_TEMPLATE.format(
-            endpoint=settings.azure_openai_endpoint.rstrip("/"),
-            deployment=settings.azure_openai_deployment_name,
-        )
-        self._url = f"{base_url}?api-version={settings.azure_openai_api_version}"
-        self._api_key = settings.azure_openai_api_key
+        # Build the full URL once at construction — reused on every call.
+        # Strip trailing slash from endpoint then append /chat/completions.
+        self._url = settings.azure_foundry_endpoint.rstrip("/") + _CHAT_PATH
+        self._api_key = settings.azure_foundry_api_key
+        self._model = settings.azure_foundry_deployment_name
         self._timeout = settings.llm.timeout_seconds
         self._retry_max = settings.llm.retry_max
         self._retry_backoff = settings.llm.retry_backoff_seconds
@@ -83,7 +89,7 @@ class AzureOpenAIProvider(LLMProvider):
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         """
-        Send a two-part prompt to Azure OpenAI and return the text response.
+        Send a two-part prompt to Azure AI Foundry and return the text response.
 
         Retries up to retry_max times with exponential backoff on:
           - httpx.TimeoutException  (request timed out)
@@ -112,19 +118,23 @@ class AzureOpenAIProvider(LLMProvider):
                     time.sleep(wait)
 
         raise LLMOutputParseError(
-            f"Azure OpenAI API call failed after {self._retry_max} attempt(s). "
+            f"Azure AI Foundry API call failed after {self._retry_max} attempt(s). "
             f"Last error: {last_error}"
         )
 
     def _call(self, system_prompt: str, user_prompt: str) -> str:
         """
-        Make a single HTTP call to the Azure OpenAI API.
+        Make a single HTTP call to the Azure AI Foundry API.
 
         Separated from complete() so tests can target the HTTP layer directly
         and the retry loop in complete() stays clean.
 
-        Azure OpenAI authenticates via the api-key header (not Bearer token).
-        The request body shape is identical to the OpenAI Chat Completions API.
+        Key difference from AzureOpenAIProvider._call():
+          - "model" field included in request body (not in URL)
+          - No api-version query parameter
+
+        Response shape is OpenAI-compatible:
+          choices[0].message.content
 
         Raises:
             httpx.TimeoutException: If the request exceeds timeout_seconds.
@@ -138,6 +148,7 @@ class AzureOpenAIProvider(LLMProvider):
                     "Content-Type": "application/json",
                 },
                 json={
+                    "model": self._model,
                     "max_tokens": self._max_tokens,
                     "messages": [
                         {"role": "system", "content": system_prompt},
@@ -150,4 +161,4 @@ class AzureOpenAIProvider(LLMProvider):
 
     def provider_name(self) -> str:
         """Return the provider identifier string."""
-        return "azure_openai"
+        return "azure_foundry"

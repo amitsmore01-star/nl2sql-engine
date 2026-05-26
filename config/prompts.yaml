@@ -30,6 +30,8 @@ nl_to_structured_query:
       "limit"       — integer or null
       "aggregation" — object or null
       "sort"        — list of sort objects (empty list if none)
+      "input_tokens"  — integer (always required)
+      "output_tokens" — integer (always required)
 
     Table object shape:
       { "table": "<schema.TableName>", "source": "<word or phrase from query>" }
@@ -58,6 +60,9 @@ nl_to_structured_query:
       - Include every table needed to answer the query — including tables needed only for joins
       - If the same table is needed twice with different roles (e.g. top acc and sub acc), include it twice with different source values
       - Never propose junction tables — they are hidden from you intentionally
+      - Only map a user term to a table if the term exactly matches (case-insensitive) table's display name or one of its listed synonyms. Do not use semantic
+       similarity, common knowledge, or language inference to guess a match — for example, do not map 'clients' to a table whose synonyms are [customer, organization]
+       because they mean the same thing in English. If the user term does not appear in the display name or synonym list — exclude that table entirely and do not guess
 
     columns:
       - Only propose columns that appear under the table you name in the schema summary
@@ -70,6 +75,7 @@ nl_to_structured_query:
       - Use operator "=" for equality, "LIKE" for partial matches, "IS NULL" / "IS NOT NULL" for null checks
       - Set value to null for IS NULL and IS NOT NULL operators
       - One filter object per condition — do not combine multiple conditions into one object
+      - The user prompt may contain an app name (e.g. "in ABC"). Do not treat the app name as a filter value. App identification is handled separately — ignore it when building filters.
 
     source:
       - Every table, column, and filter object must have a source field
@@ -99,11 +105,49 @@ nl_to_structured_query:
       - hierarchy_with_filter
       - filter_only_customer
       - aggregation_with_limit
+      - strict_synonym_matching
 
     minimal:
       - hierarchy_with_filter
+      - strict_synonym_matching
 
   examples:
+
+    strict_synonym_matching:
+      schema: |
+        table: Major.Customer [customer, organization, org]
+          CustomerID
+          CustomerCID [Customer id, Customer cid]
+          VersionTermDate
+          DeletedFlag
+        table: Major.CustomerDemographics [customer demographics, demographics]
+          CustomerID
+          CustomerName [Customer name]
+      query: "give all company in ABC"
+      correct: |
+        {
+          "tables": [],
+          "columns": [],
+          "filters": [],
+          "limit": null,
+          "aggregation": null,
+          "sort": []
+        }
+      incorrect: |
+        {
+          "tables": [{"table": "Major.Customer", "source": "company"}],
+          "columns": [],
+          "filters": [],
+          "limit": null,
+          "aggregation": null,
+          "sort": []
+        }
+      why_wrong: |
+        "Company" does not appear in the synonym list [customer, organization, org]
+        or in the display name "Customer". Mapping it to Major.Customer using
+        semantic similarity ("Company" means the same as "customers" in English)
+        is not allowed. Only exact matches against display name or synonyms are
+        valid. When no match exists, return an empty tables array.  
 
     hierarchy_with_filter:
       schema: |
@@ -136,7 +180,9 @@ nl_to_structured_query:
           ],
           "limit": null,
           "aggregation": null,
-          "sort": []
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
         }
       incorrect: |
         {
@@ -152,7 +198,9 @@ nl_to_structured_query:
           ],
           "limit": null,
           "aggregation": null,
-          "sort": []
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
         }
       why_wrong: |
         Major.Acc appears only once with source "acc" — this loses the distinction between
@@ -184,7 +232,9 @@ nl_to_structured_query:
           ],
           "limit": null,
           "aggregation": null,
-          "sort": []
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
         }
       incorrect: |
         {
@@ -199,7 +249,9 @@ nl_to_structured_query:
           ],
           "limit": null,
           "aggregation": null,
-          "sort": []
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
         }
       why_wrong: |
         Major.Customer is missing from tables even though it is required for the filter on
@@ -235,7 +287,9 @@ nl_to_structured_query:
               {"table": "Major.Customer", "column": "CustomerCID"}
             ]
           },
-          "sort": []
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
         }
       incorrect: |
         {
@@ -247,7 +301,9 @@ nl_to_structured_query:
           "filters": [],
           "limit": null,
           "aggregation": null,
-          "sort": []
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
         }
       why_wrong: |
         The user asked "how many" which signals a COUNT aggregation, and "top 5" which

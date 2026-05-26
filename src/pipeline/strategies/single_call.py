@@ -119,9 +119,11 @@ class SingleCallStrategy(NLToIRStrategy):
         context.latency_ms["nl_to_ir"] = elapsed_ms
 
         # Record token usage if provider exposes it (mock does not)
-        token_usage = getattr(self._llm_provider, "_last_token_usage", None)
-        if token_usage:
-            context.token_usage.update(token_usage)
+        #token_usage = getattr(self._llm_provider, "_last_token_usage", None)
+        context.token_usage.update({
+            "input_tokens":  ir["input_tokens"] if "input_tokens" in ir else 0,
+            "output_tokens":  ir["output_tokens"] if "output_tokens" in ir else 0
+            })
 
         # Populate context
         context.llm_output = ir

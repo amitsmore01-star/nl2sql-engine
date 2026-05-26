@@ -43,7 +43,8 @@ Sprint 4 — Schema Mapping & Validation
 ### Project Root
 - main.py
 - requirements.txt                  ← added respx==0.23.1
-- .env.example
+- .env.example                      ← V2. Added AZURE_FOUNDRY_ENDPOINT,AZURE_FOUNDRY_API_KEY,AZURE_FOUNDRY_DEPLOYMENT_NAME. 
+                                      entries under new "Azure AI Foundry" section. LLM_PROVIDER comment updated to include azure_foundry. 
 - .gitignore
 - README.md
 
@@ -72,6 +73,10 @@ Sprint 4 — Schema Mapping & Validation
                                               with nl_to_ir_strategy + prompt_example_set in
                                               LLMSettings. Added _load_prompts() and _remap_example_schema_keys() helpers. prompts.yaml
                                               loaded independently and attached as settings.prompts.Service refuses to start if prompts.yaml missing.
+                                    ← V3. Added azure_foundry_endpoint,
+                                       azure_foundry_api_key, azure_foundry_deployment_name
+                                       Optional fields. Injected via _optional_llm_secrets
+                                       list in load_settings().
 
 - src/config/prompts_models.py      ← NEW V0/V1. Pydantic models for prompts.yaml structure.
                                       PromptExample, PromptRules, StrategyPromptSpec,
@@ -225,6 +230,8 @@ Sprint 4 — Schema Mapping & Validation
                                       imported lazily inside create() — missing files
                                       do not break imports during early development.
                                       Unknown provider → UnknownProviderError.
+                                     ← V1. Added azure_foundry provider entry.
+                                       Error message updated to list all 5 valid providers.
 
 - src/llm/openai_provider.py        ← NEW V0. OpenAIProvider.
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
@@ -233,6 +240,14 @@ Sprint 4 — Schema Mapping & Validation
 
 - src/llm/azure_openai_provider.py  ← NEW V0. AzureOpenAIProvider.
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
+
+- src/llm/azure_foundry_provider.py  ← NEW V0. AzureFoundryProvider.
+                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                       URL: {endpoint}/chat/completions (no deployment in URL).
+                                       Model name sent in request body as "model" field.
+                                       3 credentials: AZURE_FOUNDRY_ENDPOINT,
+                                       AZURE_FOUNDRY_API_KEY, AZURE_FOUNDRY_DEPLOYMENT_NAME.
+                                       No api-version needed.
 
 - src/llm/anthropic_provider.py     ← NEW V0. AnthropicProvider.
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
@@ -332,8 +347,8 @@ Sprint 4 — Schema Mapping & Validation
 - tests/llm/test_openai_provider.py         ← NEW V0. 8 tests: D1-D8.
 - tests/llm/test_azure_openai_provider.py   ← NEW V0. 11 tests: E1-E11.
 - tests/llm/test_anthropic_provider.py      ← NEW V0. 8 tests: F1-F8.
+- tests/llm/test_azure_foundry_provider.py ← NEW V0. 11 tests: F1-F11. F11 is unique — verifies "model" field in request body (key Foundry difference).
 - tests/pipeline/test_schema_summary.py     ← NEW V0. 10 tests: A1-A6, B1, C1-C4.
-
 - tests/pipeline/strategies/__init__.py       ← NEW V0. in Story 3.5
 - tests/pipeline/strategies/test_base.py      ← NEW V0. in Story 3.5 5 tests: A1-A4 + A2 extended.
 - tests/pipeline/strategies/test_factory.py   ← NEW V0. in Story 3.5 5 tests: B1-B4 + B1 extended.
@@ -603,6 +618,15 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 ### Bug Fix (single_call.py — 3.6)
 - context.status was never set to "success" after clean execute(). QueryContext defaults
   to "pending". Added context.status = "success" before the log emit and return.
+
+### Azure AI Foundry Provider (Adhoc added)
+- Static api-key header used — same pattern as all other providers
+- URL pattern: {endpoint}/chat/completions — no deployment name in URL
+- Model name goes in request body as "model" field — key difference from azure_openai
+- No api-version query param needed — Foundry endpoint does not require it
+- 3 credentials only (vs 4 for azure_openai — no api_version)
+- Response shape identical to OpenAI: choices[0].message.content
+- To activate: set LLM_PROVIDER=azure_foundry in .env
 ---
 
 ## Architecture Document Updates Made
