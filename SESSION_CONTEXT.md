@@ -19,7 +19,8 @@
 - 3.4 ✅ Schema Summary Builder (all tests passing)
 - 3.5 ✅ NL-to-IR Strategy Scaffold + QueryContext Refactor (all tests passing)
 - 3.6 ✅ Single-Call Strategy + Prompt Assembly
-- 3.7 ✅ Partial Pipeline Wire-up + Intent Guard 
+- 3.7 ✅ Partial Pipeline Wire-up + Intent Guard
+- 4.1 ✅ NL-to-IR Tool Endpoint (all tests passing)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -27,16 +28,14 @@ Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 Sprint 3 — LLM Layer ✅ COMPLETE
 
 ## Current Sprint
-Sprint 3 — LLM Layer
-
-## Current Story
-3.7 — Partial Pipeline Wire-up + Intent Guard ✅ COMPLETE
-
-## Next Sprint
 Sprint 4 — Schema Mapping & Validation
 
+## Current Story
+## Current Story
+4.1 — NL-to-IR Tool Endpoint ✅ COMPLETE
+
 ## Next Story
-4.1 — NL-to-IR Tool Endpoint
+4.2 — Table & Column Validator
 
 ## Files Built So Far
 
@@ -139,6 +138,8 @@ Sprint 4 — Schema Mapping & Validation
                                     ← V2. Added Step 5 — LLM provider initialisation
                                       via LLMProviderFactory. app.state.llm_provider and
                                       app.state.llm_provider_ok now set at startup.
+                                    ← V3. Registered nl_to_ir_tool router
+                                      under prefix="/v1/tools".
 
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
@@ -183,6 +184,13 @@ Sprint 4 — Schema Mapping & Validation
                                         TODO Phase 3 placeholder only.
                                         POST /v1/tools/feedback → HTTP 501 Not Implemented.
                                         Router registered in app.py with prefix="/v1/tools".
+
+- src/api/tools/nl_to_ir_tool.py    ← NEW V0. POST /v1/tools/nl-to-ir.
+                                      Validates context fields (nl_query_original,
+                                      app_id, app_schema_version) via ContextValidator.
+                                      Runs Intent Guard then NL-to-IR Strategy.
+                                      Returns ToolResponse with updated QueryContext.
+                                      Auth via Depends(require_foundry_key).                                        
 
 - src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
                                       Builds QueryContext, calls run_app_identifier(),
@@ -354,6 +362,10 @@ Sprint 4 — Schema Mapping & Validation
                                                tests with nl-to-ir tests. Updated validator tests for llm_output. Registry count: 6 → 5 stages.
 
 - tests/api/tools/test_feedback_tool.py     ← new in 2.5. 2 tests: 501 + Phase 3 message.
+- tests/api/tools/test_nl_to_ir_tool.py     ← NEW V0. 13 tests:
+                                              A1-A4 auth, B1-B4 context validation,
+                                              C1-C2 intent guard, D1-D3 success,
+                                              E1 schema not found.
 
 - tests/llm/test_base.py                    ← NEW V0. 3 tests: A1-A3.
 - tests/llm/test_mock_provider.py           ← NEW V0. 6 tests: B1-B6.
@@ -634,6 +646,18 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
   match user terms against display name or synonyms[], never semantic similarity.
   Negative example added: "clients" must not map to Major.Customer.
   Example name: strict_synonym_matching. Added to default example_set.
+
+### NL-to-IR Tool Endpoint (4.1)
+- Auth uses Depends(require_foundry_key) in route signature — NOT called
+  manually in the handler body. FastAPI resolves the nested
+  Depends(_api_key_header) automatically. Manual call would bypass header
+  extraction and break auth entirely.
+- ContextValidator instance created once at module level (_context_validator)
+  — reused across all requests. Same pattern will apply to all tool endpoints.
+- Intent Guard failure → HTTP 200 with ToolResponse (business error rule).
+- Schema not found → HTTP 500 with ToolResponse (unexpected internal error).
+- REQUEST_RECEIVED log emitted with caller="foundry" — distinguishes tool
+  endpoint calls from user-facing /v1/query calls in the log file.
 
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have

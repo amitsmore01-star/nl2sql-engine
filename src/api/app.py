@@ -4,6 +4,7 @@
 # V2 - Story 3.7: Added LLM provider initialisation at startup.
 #                 app.state.llm_provider and app.state.llm_provider_ok now set.
 #                 Orchestrator and tool endpoints read llm_provider from app.state.
+# V3 - Story 4.1: Registered nl_to_ir_tool router under prefix="/v1/tools".
 #
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
@@ -158,9 +159,13 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     from src.api.v1.query import router as query_router
     app.include_router(query_router, prefix="/v1")
 
-    # Foundry tool routers
+    # Foundry tool routers — all under /v1/tools
     # feedback_tool: POST /v1/tools/feedback — Phase 3 placeholder, returns 501
     from src.api.tools.feedback_tool import router as feedback_tool_router
     app.include_router(feedback_tool_router, prefix="/v1/tools")
+
+    # nl_to_ir_tool: POST /v1/tools/nl-to-ir — Story 4.1
+    from src.api.tools.nl_to_ir_tool import router as nl_to_ir_tool_router
+    app.include_router(nl_to_ir_tool_router, prefix="/v1/tools")
 
     return app
