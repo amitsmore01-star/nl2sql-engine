@@ -1,9 +1,12 @@
 # tests/pipeline/test_orchestrator.py
 # V0 - Initial implementation
+# V1 - Story 5.4: Added B6-B9 covering full 5-stage pipeline with SQL output.
+#                 B1-B5 unchanged.
 #
 # Tests for run_pipeline() in src/pipeline/orchestrator.py
 #
-# Covers the partial pipeline: App Identifier → Intent Guard → NL-to-IR Strategy.
+# Covers the full pipeline: App Identifier → Intent Guard → NL-to-IR Strategy
+#                           → Validator → SQL Builder.
 # Uses MockLLMProvider — zero real API calls.
 # Uses a real SchemaRepository loaded from schemas/ABC_app.json.
 
@@ -25,7 +28,9 @@ from unittest.mock import MagicMock
 # Fixtures
 # ---------------------------------------------------------------------------
 
-# Minimal valid simplified IR — what the mock LLM returns
+# Minimal valid simplified IR — what the mock LLM returns.
+# References Major.Customer and Major.CustomerDemographics from ABC_app.json.
+# The validator will resolve these tables and columns successfully.
 _GOLDEN_IR = json.dumps({
     "tables": [
         {"table": "Major.Customer", "source": "customer"},
@@ -70,8 +75,10 @@ def mock_llm() -> MockLLMProvider:
 
 
 @pytest.fixture
-def logger(settings) -> StructuredLogger:
-    """Real StructuredLogger for the pipeline."""
+def logger(settings, tmp_path) -> StructuredLogger:
+    """StructuredLogger writing to a temp directory."""
+    settings.logging.log_dir = str(tmp_path)
+    settings.logging.log_archive_dir = str(tmp_path / "archive")
     return StructuredLogger(settings)
 
 
@@ -116,13 +123,8 @@ class TestOrchestrator:
     ):
         """
         B2: Non-SELECT query stops at Intent Guard.
-        NL-to-IR stage is never called (mock LLM has no responses — would
-        raise ValueError if called).
+        NL-to-IR stage is never called.
         """
-        # MockLLMProvider with empty responses — any call raises ValueError.
-        # If NL-to-IR runs it will fail, proving Intent Guard did NOT stop it.
-        # We give it a response so the test is about the guard, not the mock.
-        # Actually: give it NO valid responses so that if called it explodes.
         llm_that_must_not_be_called = MockLLMProvider(responses=["unused"])
 
         ctx = _make_context("DELETE all customers in ABC")
@@ -137,7 +139,6 @@ class TestOrchestrator:
 
         assert result.status == "failed"
         assert result.error["code"] == UNSUPPORTED_INTENT
-        # llm_output must still be None — NL-to-IR never ran
         assert result.llm_output is None
 
     def test_B3_unknown_app_stops_at_app_identifier(
@@ -167,7 +168,7 @@ class TestOrchestrator:
         self, schema_repo, settings, mock_llm, logger
     ):
         """
-        B4: context.status = "success" after all three stages complete cleanly.
+        B4: context.status = "success" after all stages complete cleanly.
         """
         ctx = _make_context("give me customer name for customer ASA in ABC")
 
@@ -188,7 +189,6 @@ class TestOrchestrator:
         B5: context.app_id is populated by App Identifier during the pipeline.
         """
         ctx = _make_context("give me customer name for customer ASA in ABC")
-        # app_id starts empty — App Identifier fills it in
         assert ctx.app_id == ""
 
         result = run_pipeline(
@@ -200,3 +200,83 @@ class TestOrchestrator:
         )
 
         assert result.app_id == "ABC_app"
+
+    def test_B6_full_pipeline_produces_sql(
+        self, schema_repo, settings, mock_llm, logger
+    ):
+        """
+        B6: Full 5-stage pipeline runs — context.sql is populated with a non-empty string.
+        This is the first test that confirms SQL comes out of the end-to-end pipeline.
+        """
+        ctx = _make_context("give me customer name for customer ASA in ABC")
+
+        result = run_pipeline(
+            context=ctx,
+            schema_repo=schema_repo,
+            llm_provider=mock_llm,
+            logger=logger,
+            settings=settings,
+        )
+
+        assert result.sql is not None
+        assert len(result.sql) > 0
+        assert "SELECT" in result.sql
+
+    def test_B7_full_pipeline_status_success(
+        self, schema_repo, settings, mock_llm, logger
+    ):
+        """
+        B7: context.status = "success" after all 5 stages complete (including SQL builder).
+        """
+        ctx = _make_context("give me customer name for customer ASA in ABC")
+
+        result = run_pipeline(
+            context=ctx,
+            schema_repo=schema_repo,
+            llm_provider=mock_llm,
+            logger=logger,
+            settings=settings,
+        )
+
+        assert result.status == "success"
+        assert result.sql is not None
+
+    def test_B8_non_select_query_sql_is_none(
+        self, schema_repo, settings, logger
+    ):
+        """
+        B8: Non-select query blocked at Intent Guard — context.sql stays None.
+        Pipeline never reaches SQL Builder.
+        """
+        ctx = _make_context("DELETE all customers in ABC")
+
+        result = run_pipeline(
+            context=ctx,
+            schema_repo=schema_repo,
+            llm_provider=MockLLMProvider(responses=["unused"]),
+            logger=logger,
+            settings=settings,
+        )
+
+        assert result.status == "failed"
+        assert result.sql is None
+
+    def test_B9_unknown_app_sql_is_none(
+        self, schema_repo, settings, logger
+    ):
+        """
+        B9: Unknown app blocked at App Identifier — context.sql stays None.
+        Pipeline never reaches SQL Builder.
+        """
+        ctx = _make_context("give me data from UNKNOWN_APP_XYZ")
+
+        result = run_pipeline(
+            context=ctx,
+            schema_repo=schema_repo,
+            llm_provider=MockLLMProvider(responses=["unused"]),
+            logger=logger,
+            settings=settings,
+        )
+
+        assert result.status == "failed"
+        assert result.sql is None

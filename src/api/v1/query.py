@@ -11,17 +11,22 @@
 #                 TODO (Story 5.4): Replace temporary QueryContext response with final
 #                 QueryResponse shape defined in Section 10.3 of architecture document.
 #                 Remove this TODO marker when done.
+# V2 - Story 5.4: Replaced temporary QueryContext response with final QueryResponse
+#                 shape (Section 10.3). TODO marker removed.
+#                 Emits RESPONSE_SENT log with status, total_latency_ms,
+#                 total_tokens_used after pipeline completes.
+#                 Business errors now in errors[] list (not context.error dict).
+#                 data.sql populated from context.sql on success.
 #
 # POST /v1/query — user-facing query endpoint.
 #
-# Story 3.7 scope — what this file does NOW:
+# What this file does:
 #   1. Accepts QueryRequest body (nl_query, optional app_id, user_id, request_id)
 #   2. Enforces CLIENT_API_KEY auth via Depends(require_client_key)
 #   3. Builds an initial QueryContext from the request fields
-#   4. Calls run_pipeline() — App Identifier → Intent Guard → NL-to-IR Strategy
-#   5. Returns full QueryContext as response body (temporary — Story 5.4 finalises shape)
-#   6. Business errors (APP_NOT_DETERMINED, UNSUPPORTED_INTENT etc.) → HTTP 200 with
-#      context.status="failed" and context.error populated (set inside orchestrator)
+#   4. Calls run_pipeline() — full 5-stage pipeline
+#   5. Returns final QueryResponse shape (Section 10.3)
+#   6. Business errors → HTTP 200, status="failed", errors[] list populated
 #   7. Unexpected exceptions → INTERNAL_ERROR, HTTP 500
 #
 # TECH DEBT (flagged here for future story):
@@ -37,7 +42,7 @@ from fastapi.responses import JSONResponse
 
 from src.api.auth import require_client_key
 from src.api.models.request import QueryRequest
-from src.core.constants import INTERNAL_ERROR
+from src.core.constants import INTERNAL_ERROR, RESPONSE_SENT
 from src.core.logging.log_models import LogEntry
 from src.core.logging.logger import StructuredLogger
 from src.core.models import QueryContext
@@ -45,8 +50,6 @@ from src.pipeline.orchestrator import run_pipeline
 
 # ---------------------------------------------------------------------------
 # Router
-# APIRouter groups related endpoints. Registered in app.py with prefix="/v1".
-# Result: this router handles POST /v1/query.
 # ---------------------------------------------------------------------------
 router = APIRouter()
 
@@ -60,48 +63,28 @@ def query(
     """
     POST /v1/query — Submit a natural language query, receive SQL.
 
-    Story 3.7: Calls run_pipeline() (orchestrator). Returns full QueryContext
-    as temporary response body. SQL is None until Story 5.4.
+    Runs full 5-stage pipeline and returns the final QueryResponse shape
+    defined in architecture Section 10.3.
 
     Args:
         request: FastAPI Request — gives access to app.state (schema_repo,
                  llm_provider, settings).
         body:    Validated QueryRequest body from the HTTP request.
         _auth:   Auth dependency result — None on success, raises 401 on failure.
-                 Prefixed with _ to signal the return value is intentionally unused.
 
     Returns:
-        JSONResponse with QueryContext body (temporary shape — Story 5.4 finalises).
-        HTTP 200 on success and on business errors (APP_NOT_DETERMINED etc.).
+        JSONResponse with QueryResponse envelope.
+        HTTP 200 on success and on business errors.
         HTTP 500 on unexpected internal errors.
     """
-    # ------------------------------------------------------------------
-    # Pull shared state off app.state.
-    # These are set during lifespan startup in app.py.
-    # If startup failed, schema_repo may be None — handled in the
-    # try/except below as an INTERNAL_ERROR.
-    # ------------------------------------------------------------------
+    request_start_ms = int(time.time() * 1000)
+
     schema_repo = request.app.state.schema_repo
     llm_provider = request.app.state.llm_provider
     settings = request.app.state.settings
 
-    # ------------------------------------------------------------------
-    # Build StructuredLogger.
-    # One logger per request — writes to logs/{request_id}.log.
-    # ------------------------------------------------------------------
     logger = StructuredLogger(settings)
 
-    # ------------------------------------------------------------------
-    # Build initial QueryContext from the request.
-    #
-    # QueryContext is the pipeline state object that travels through
-    # every stage. We populate what we know from the request now.
-    # Each subsequent stage will add its own outputs.
-    #
-    # app_id: use body.app_id if provided, else "" (app_identifier fills it in).
-    # nl_query_original: the raw query — immutable after construction.
-    # request_id: from body (auto-generated UUID if not provided by caller).
-    # ------------------------------------------------------------------
     context = QueryContext(
         request_id=body.request_id,
         user_id=body.user_id,
@@ -109,28 +92,12 @@ def query(
         nl_query_original=body.nl_query,
     )
 
-    # ------------------------------------------------------------------
-    # Main pipeline try/except block.
-    # Business errors (APP_NOT_DETERMINED, UNSUPPORTED_INTENT etc.) are
-    # caught inside run_pipeline() and converted to context failures —
-    # they never raise out to here.
-    # Only truly unexpected exceptions (RuntimeError, AttributeError etc.)
-    # reach this except block.
-    # ------------------------------------------------------------------
     try:
-        # Defensive check — schema_repo must be loaded.
-        # This catches the case where app startup failed silently.
         if schema_repo is None:
             raise RuntimeError(
                 "schema_repo is not initialised — startup may have failed."
             )
 
-        # --------------------------------------------------------------
-        # Run pipeline: App Identifier → Intent Guard → NL-to-IR Strategy
-        # REQUEST_RECEIVED log is emitted inside run_pipeline().
-        # Each stage reads from context and writes its outputs back.
-        # Business errors set context.status="failed" — pipeline stops.
-        # --------------------------------------------------------------
         context = run_pipeline(
             context=context,
             schema_repo=schema_repo,
@@ -139,12 +106,11 @@ def query(
             settings=settings,
         )
 
-    # ------------------------------------------------------------------
-    # Unexpected error — INTERNAL_ERROR
-    # Full detail goes to the log only — never exposed to the caller.
-    # HTTP 500.
-    # ------------------------------------------------------------------
     except Exception as exc:
+        # ------------------------------------------------------------------
+        # Unexpected error — INTERNAL_ERROR
+        # Full detail goes to the log only — never exposed to caller.
+        # ------------------------------------------------------------------
         logger.log(
             LogEntry(
                 stage=INTERNAL_ERROR,
@@ -156,25 +122,122 @@ def query(
                 },
             )
         )
-        context.status = "failed"
-        context.error = {
-            "code": INTERNAL_ERROR,
-            "message": "An unexpected error occurred. Please check the logs.",
-        }
+        total_ms = int(time.time() * 1000) - request_start_ms
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=context.model_dump(),
+            content=_build_response(
+                context=context,
+                override_status="failed",
+                errors=[{"code": INTERNAL_ERROR, "message": "An unexpected error occurred. Please check the logs."}],
+                total_ms=total_ms,
+            ),
         )
 
     # ------------------------------------------------------------------
-    # Return the full QueryContext as the response body.
-    # Business errors: context.status="failed", context.error populated.
-    # Success: context.status="success", context.llm_output populated.
-    # Both return HTTP 200 — per architecture rule.
-    # TODO (Story 5.4): Replace with final QueryResponse shape (Section 10.3).
-    # Remove this TODO marker when done.
+    # Build final QueryResponse (Section 10.3)
     # ------------------------------------------------------------------
+    total_ms = int(time.time() * 1000) - request_start_ms
+    context.total_latency_ms = total_ms
+
+    # Collect errors[] from context.error (set by orchestrator on business failures)
+    errors = []
+    if context.error:
+        errors.append(context.error)
+
+    response_body = _build_response(
+        context=context,
+        override_status=None,
+        errors=errors,
+        total_ms=total_ms,
+    )
+
+    # ------------------------------------------------------------------
+    # Emit RESPONSE_SENT log
+    # ------------------------------------------------------------------
+    total_tokens = context.token_usage.get("total", 0) if context.token_usage else 0
+    logger.log(
+        LogEntry(
+            stage=RESPONSE_SENT,
+            request_id=context.request_id,
+            user_id=context.user_id,
+            app_id=context.app_id,
+            app_schema_version=context.app_schema_version,
+            payload={
+                "status": context.status,
+                "total_latency_ms": total_ms,
+                "total_tokens_used": total_tokens,
+            },
+        )
+    )
+
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content=context.model_dump(),
+        content=response_body,
     )
+
+
+# ---------------------------------------------------------------------------
+# Response builder — constructs the Section 10.3 envelope
+# ---------------------------------------------------------------------------
+
+def _build_response(
+    context: QueryContext,
+    override_status: str | None,
+    errors: list[dict],
+    total_ms: int,
+) -> dict:
+    """
+    Build the final QueryResponse dict matching architecture Section 10.3.
+
+    {
+      "request_id": "...",
+      "status":     "success | failed",
+      "data": {
+        "sql":              "SELECT TOP 10000 ...",
+        "structured_query": { ... } | null,
+        "warnings":         []
+      },
+      "meta": {
+        "app_id":             "ABC_app",
+        "app_schema_version": "1.0",
+        "total_latency_ms":   310,
+        "total_tokens_used":  2140
+      },
+      "errors": [
+        { "code": "...", "message": "..." }
+      ]
+    }
+
+    Args:
+        context:         Pipeline state after all stages have run.
+        override_status: Force a specific status string (used for 500 errors).
+                         If None, uses context.status.
+        errors:          List of error dicts to populate errors[].
+        total_ms:        Total request latency in milliseconds.
+
+    Returns:
+        Dict ready to be serialised as JSON response body.
+    """
+    final_status = override_status if override_status is not None else context.status
+    total_tokens = context.token_usage.get("total", 0) if context.token_usage else 0
+
+    structured_query_dict = None
+    if context.structured_query is not None:
+        structured_query_dict = context.structured_query.model_dump()
+
+    return {
+        "request_id": context.request_id,
+        "status": final_status,
+        "data": {
+            "sql": context.sql,
+            "structured_query": structured_query_dict,
+            "warnings": list(context.warnings),
+        },
+        "meta": {
+            "app_id": context.app_id,
+            "app_schema_version": context.app_schema_version,
+            "total_latency_ms": total_ms,
+            "total_tokens_used": total_tokens,
+        },
+        "errors": errors,
+    }

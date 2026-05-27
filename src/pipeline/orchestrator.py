@@ -1,23 +1,23 @@
 # src/pipeline/orchestrator.py
 # V0 - Initial implementation (partial — Stories 4.x and 5.4 add validator + SQL builder)
+# V1 - Story 5.4: Added validator chain and run_sql_builder() stages after NL-to-IR.
+#                 Removed TODO marker. Pipeline is now complete end-to-end.
+#                 NL2SQLBaseError caught from validator chain and converted to context failure.
 #
-# Wires the first three pipeline stages in sequence:
-#   1. App Identifier     — detect which app schema the query refers to
-#   2. Intent Guard       — block non-SELECT keywords before any LLM call
-#   3. NL-to-IR Strategy  — single LLM call, produces simplified IR in context.llm_output
+# Wires all five pipeline stages in sequence:
+#   1. App Identifier       — detect which app schema the query refers to
+#   2. Intent Guard         — block non-SELECT keywords before any LLM call
+#   3. NL-to-IR Strategy    — single LLM call, produces simplified IR in context.llm_output
+#   4. Validator            — four sub-stages: table/column validator → join resolver
+#                             → rule applicator → structured query builder
+#   5. SQL Builder          — assembles final SQL from StructuredQuery
 #
 # Design rules:
-#   - Each stage is called via its own internal function (run_app_identifier, etc.)
+#   - Each stage is called via its own internal function
 #   - Both /v1/query and /v1/tools/query call run_pipeline() — zero duplication
 #   - If any stage sets context.status = "failed", the pipeline stops immediately
 #   - Exceptions raised by stages are caught here and converted into context failures
-#     so callers always receive a context object, never a raw exception from a
-#     business error
-#   - The orchestrator never inspects the *content* of errors — only checks status
-#
-# TODO (Story 5.4): Add run_validator() and run_sql_builder() stages after NL-to-IR.
-#                   Replace temporary QueryContext response in query.py with final
-#                   QueryResponse shape and remove this TODO marker.
+#     so callers always receive a context object, never a raw business exception
 
 from src.core.models import QueryContext
 from src.core.constants import REQUEST_RECEIVED, INTERNAL_ERROR
@@ -29,7 +29,16 @@ from src.validator.app_identifier import run_app_identifier
 from src.pipeline.intent_guard import run_intent_guard
 from src.pipeline.strategies.factory import NLToIRStrategyFactory
 from src.pipeline.schema_summary import build_schema_summary
-from src.core.exceptions import AppNotDeterminedError, MultipleAppsMatchedError
+from src.core.exceptions import (
+    AppNotDeterminedError,
+    MultipleAppsMatchedError,
+    NL2SQLBaseError,
+)
+from src.validator.table_column_validator import run_table_column_validator
+from src.validator.join_resolver import run_join_resolver
+from src.validator.rule_applicator import run_rule_applicator
+from src.validator.structured_query_builder import run_structured_query_builder
+from src.sql.sql_builder import run_sql_builder
 
 
 def run_pipeline(
@@ -40,16 +49,16 @@ def run_pipeline(
     settings,
 ) -> QueryContext:
     """
-    Run the partial pipeline: App Identifier → Intent Guard → NL-to-IR Strategy.
+    Run the full pipeline: App Identifier → Intent Guard → NL-to-IR Strategy
+                           → Validator chain → SQL Builder.
 
     Each stage reads from context and writes its outputs back to context.
     If any stage fails — either by raising a known business exception or by
     setting context.status = "failed" — the pipeline stops and returns the
     context so the caller can inspect the error.
 
-    Known business exceptions (AppNotDeterminedError, MultipleAppsMatchedError)
-    are caught here and converted into context failures. Callers (query.py,
-    tool endpoints) always receive a context object — never a raw business exception.
+    Known business exceptions are caught here and converted into context
+    failures. Callers always receive a context object — never a raw exception.
 
     Args:
         context:      Pipeline state object. nl_query_original must be set.
@@ -57,9 +66,8 @@ def run_pipeline(
         llm_provider: LLM provider instance — passed to NL-to-IR Strategy.
         logger:       StructuredLogger — passed to every stage.
         settings:     Loaded Settings object (src.config.settings.Settings).
-                      Needed by NLToIRStrategyFactory to select the strategy
-                      and example set. Not type-hinted here to avoid a
-                      circular import — Settings imports nothing from pipeline.
+                      Needed by NLToIRStrategyFactory and run_sql_builder.
+                      Not type-hinted here to avoid a circular import.
 
     Returns:
         The context object after all stages have run (or after the first failure).
@@ -69,8 +77,6 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Emit REQUEST_RECEIVED at pipeline entry.
     # caller="user" — this function is called from /v1/query (user-facing).
-    # Foundry tool endpoints emit their own REQUEST_RECEIVED with
-    # caller="foundry" when those endpoints are built in Sprint 4/5.
     # ------------------------------------------------------------------
     logger.log(
         LogEntry(
@@ -88,11 +94,6 @@ def run_pipeline(
 
     # ------------------------------------------------------------------
     # Stage 1 — App Identifier
-    # Detects which app schema this query belongs to.
-    # Populates context.app_id and context.app_schema_version.
-    #
-    # run_app_identifier() raises on failure — it does not set context fields.
-    # We catch the known exceptions and convert to context failures here.
     # ------------------------------------------------------------------
     try:
         context = run_app_identifier(context, schema_repo, logger)
@@ -103,10 +104,6 @@ def run_pipeline(
 
     # ------------------------------------------------------------------
     # Stage 2 — Intent Guard
-    # Deterministic keyword scan — no LLM call.
-    # Blocks DELETE / DROP / UPDATE / INSERT / TRUNCATE / ALTER / CREATE.
-    # run_intent_guard() does not raise — it sets context.status = "failed"
-    # and returns. We check status and stop early if needed.
     # ------------------------------------------------------------------
     context = run_intent_guard(context, logger)
     if context.status == "failed":
@@ -114,13 +111,6 @@ def run_pipeline(
 
     # ------------------------------------------------------------------
     # Stage 3 — NL-to-IR Strategy
-    # Builds a compressed schema summary for the LLM prompt, then runs
-    # the configured strategy (Phase 1: SingleCallStrategy).
-    # Populates context.llm_output with the simplified IR.
-    #
-    # schema_repo.get_schema() raises SchemaLoadError if app_id not found —
-    # should not happen here since Stage 1 confirmed the app, but we guard
-    # defensively and treat it as an internal error.
     # ------------------------------------------------------------------
     try:
         app_schema = schema_repo.get_schema(context.app_id)
@@ -135,5 +125,32 @@ def run_pipeline(
     schema_summary = build_schema_summary(app_schema)
     strategy = NLToIRStrategyFactory.create(settings, llm_provider, logger)
     context = strategy.execute(context, schema_summary)
+    if context.status == "failed":
+        return context
+
+    # ------------------------------------------------------------------
+    # Stage 4 — Validator chain
+    # Four sub-stages run in sequence — same pattern as validator_tool.py.
+    # All business errors are caught as NL2SQLBaseError (base class of
+    # NoRelevantTablesError, NoJoinPathError, StructuredQueryBuildError etc.)
+    # and converted to context failures.
+    # ------------------------------------------------------------------
+    try:
+        context = run_table_column_validator(context, schema_repo, logger)
+        context = run_join_resolver(context, schema_repo, logger)
+        context = run_rule_applicator(context, schema_repo, logger)
+        context = run_structured_query_builder(context, logger)
+    except NL2SQLBaseError as exc:
+        context.status = "failed"
+        context.error = {"code": exc.code, "message": exc.message}
+        return context
+
+    if context.status == "failed":
+        return context
+
+    # ------------------------------------------------------------------
+    # Stage 5 — SQL Builder
+    # ------------------------------------------------------------------
+    context = run_sql_builder(context, logger, settings)
 
     return context

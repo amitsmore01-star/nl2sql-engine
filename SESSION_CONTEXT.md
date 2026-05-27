@@ -29,6 +29,7 @@
 - 5.1 ✅ Select Builder (all tests passing)
 - 5.2 ✅ Join Builder (all tests passing)
 - 5.3 ✅ Where Builder (all tests passing)
+- 5.4 ✅ SQL Orchestrator & Final Pipeline Wire-up (all tests passing)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -36,14 +37,15 @@ Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 Sprint 3 — LLM Layer ✅ COMPLETE
 Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 
+
 ## Current Sprint
-Sprint 5 — SQL Builder
+Sprint 5 — SQL Builder 
 
 ## Current Story
-5.3 — Where Builder ✅ COMPLETE
+5.4 — SQL Orchestrator & Final Pipeline Wire-up ✅ COMPLETE
 
 ## Next Story
-5.4 — SQL Orchestrator & Final Pipeline Wire-up
+5.5 — SQL Builder Tool Endpoint
 
 
 ## Files Built So Far
@@ -233,8 +235,14 @@ src/api/tools/validator_tool.py     ← NEW V0. endpoint — mirrors nl_to_ir_to
                                       (temporary shape). REQUEST_RECEIVED log now emitted
                                       inside orchestrator — removed duplicate emit from V0.
                                       Business error except blocks removed — orchestrator
-                                      handles them internally. TODO marker added for Story 5.4.
-
+                                      handles them internally.
+                                    ← V2. Replaced temporary QueryContext response with final
+                                      QueryResponse shape (Section 10.3). TODO marker removed.
+                                      Top-level keys: request_id, status, data, meta, errors.
+                                      data.sql populated from context.sql on success.
+                                      errors[] list replaces context.error dict for business errors.
+                                      Emits RESPONSE_SENT log after pipeline completes.
+                                      _build_response() helper extracted for 500 and 200 paths.
 
   - src/validator/app_identifier.py       ← new in 2.2
                                             V1. Bug fix: logger.log() now receives
@@ -358,7 +366,12 @@ src/validator/structured_query_builder.py       ← V0. Translates enriched Quer
                                           Stops early if any stage sets context.status="failed".
                                           Emits REQUEST_RECEIVED log with caller="user".
                                           TODO (Story 5.4): add validator + SQL builder stages.
-                                        ← TO UPDATE in Story 5.4 (V1 — final)
+                                         ← V1. Added full validator chain (run_table_column_validator → run_join_resolver →       run_rule_applicator→ run_structured_query_builder) and run_sql_builder() after
+                                            NL-to-IR stage. NL2SQLBaseError caught from validator chain
+                                            and converted to context failure. Removed TODO marker.
+                                            Pipeline now complete end-to-end (5 stages).
+                                            Note: no src/validator/validator.py exists — four sub-stages
+                                            chained directly, same pattern as validator_tool.py.
 
 src/sql/select_builder.py   ← NEW V0. build_select(structured_query, default_top_rows) -> str.
                             Builds SELECT TOP N clause from StructuredQuery.columns.
@@ -382,7 +395,15 @@ src/sql/where_builder.py    ← NEW V0. build_where(structured_query) -> str.
                               _split_rule() extracts lhs from rule strings using ordered operator
                               list — handles ISNULL(c.DeletedFlag, 0) = 0 correctly.
                               Empty filters + empty rules → returns "".
-                              Pure function — no logging, no LLM, no schema lookups.                            
+                              Pure function — no logging, no LLM, no schema lookups.     
+src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, settings) -> QueryContext.
+                                  Assembles SELECT + FROM/JOIN + WHERE into final SQL string.
+                                  Calls build_select(), build_join(), build_where() in sequence.
+                                  Stitches clauses with newline, appends semicolon.
+                                  Reads settings.sql.default_top_rows as TOP fallback.
+                                  structured_query=None → status="failed", SQL_BUILD_ERROR, no raise.
+                                  Emits SQL_BUILT log on success.
+                                  Pure assembly — no LLM, no schema lookups.                                                   
 
 ### Tests
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
@@ -435,6 +456,11 @@ src/sql/where_builder.py    ← NEW V0. build_where(structured_query) -> str.
                                               MockLLMProvider injected into app.state after
                                               lifespan startup for success-path tests.
                                               D3 added: UNSUPPORTED_INTENT test.
+                                            ← V2. Groups C, D, E rewritten for final QueryResponse shape.
+                                              C1 correct top-level keys, C2 data.sql populated,
+                                              C3 meta.app_id correct, C4 request_id echoed, C5 status=success.
+                                              D1-D3 errors[] list (not context.error dict).
+                                              E1 HTTP 500 errors[0].code=INTERNAL_ERROR.
 
 - tests/api/tools/test_context_validator.py ← new in 2.5
                                               Groups: A1-A6, B1-B5, C1-C2, D1-D4, E1-E2, F1-F4
@@ -474,10 +500,17 @@ tests/api/tools/test_validator_tool.py      ← NEW V0. New test file — mirror
                                                 B3 unknown app stops at App Identifier,
                                                 B4 status=success on clean run,
                                                 B5 app_id populated after valid run.
+                                              ← V1. Added B6-B9 to existing B1-B5.
+                                                B6 full pipeline produces sql, B7 status=success with sql,
+                                                B8 non-select sql=None, B9 unknown app sql=None.
 
 tests/sql/test_select_builder.py    ← NEW V0. 8 tests: single column, multiple columns,
                                       user top_rows override, zero TOP (default and user),
                                       empty columns, AS alignment, golden Section 9.3 clause.
+tests/sql/test_sql_builder.py           ← NEW V0. 7 tests: S1 sql populated, S2 SELECT TOP present
+                                          (sets default_top_rows=10000 explicitly — not config-dependent),
+                                          S3 FROM present, S4 INNER JOIN present, S5 WHERE present,
+                                          S6 status=success, S7 missing structured_query → failed + SQL_BUILD_ERROR.
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -833,6 +866,23 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
   indistinguishable from the separator by string search. Alignment verified by
   dry-run; test covers correctness of conditions and connectors instead.
   
+### SQL Orchestrator & Final Pipeline Wire-up (5.4)
+- No src/validator/validator.py exists — four validator sub-stages chained directly
+  in orchestrator, same pattern as validator_tool.py. Architecture doc describes
+  run_validator() as logical behaviour, not a file name.
+- NL2SQLBaseError used as single catch in orchestrator validator chain — covers
+  NoRelevantTablesError, NoJoinPathError, StructuredQueryBuildError and all other
+  business errors from the four sub-stages.
+- settings.sql.default_top_rows = 0 in dev config — TOP clause omitted when 0.
+  Tests that assert SELECT TOP must set default_top_rows=10000 explicitly and never
+  rely on config value.
+- _build_response() extracted as private helper in query.py — used by both the
+  success path (HTTP 200) and the internal error path (HTTP 500) to ensure the
+  Section 10.3 envelope shape is consistent in all responses.
+- RESPONSE_SENT log emitted at end of query.py after pipeline completes.
+- errors[] in QueryResponse is populated from context.error dict (set by orchestrator).
+  Single error entry on failure, empty list on success.
+    
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
