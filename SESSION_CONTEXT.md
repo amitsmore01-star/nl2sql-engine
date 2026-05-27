@@ -30,6 +30,7 @@
 - 5.2 ✅ Join Builder (all tests passing)
 - 5.3 ✅ Where Builder (all tests passing)
 - 5.4 ✅ SQL Orchestrator & Final Pipeline Wire-up (all tests passing)
+- 5.5 ✅ SQL Builder Tool Endpoint
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -42,10 +43,10 @@ Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 Sprint 5 — SQL Builder 
 
 ## Current Story
-5.4 — SQL Orchestrator & Final Pipeline Wire-up ✅ COMPLETE
+5.5 — SQL Builder Tool Endpoint ✅ COMPLETE
 
 ## Next Story
-5.5 — SQL Builder Tool Endpoint
+5.6 — App Identifier Tool Endpoint
 
 
 ## Files Built So Far
@@ -164,6 +165,7 @@ Sprint 5 — SQL Builder
                                     ← V3. Registered nl_to_ir_tool router
                                       under prefix="/v1/tools".
                                     ← V4. Registered validator_tool router under /v1/tools
+                                    ← V5. Registered sql_builder_tool router under prefix="/v1/tools".
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
 - src/api/auth.py                   ← new in 2.4 (require_client_key, require_foundry_key)
@@ -217,6 +219,13 @@ Sprint 5 — SQL Builder
 
 src/api/tools/validator_tool.py     ← NEW V0. endpoint — mirrors nl_to_ir_tool.py pattern exactly
                                     ← V1. POST /v1/tools/validator — runs full validator chain, returns StructuredQuery
+src/api/tools/sql_builder_tool.py   ← NEW V0. POST /v1/tools/sql-builder.
+                                      Validates structured_query present (stage "sql-builder"),
+                                      calls run_sql_builder(context, logger, settings),
+                                      returns ToolResponse with context.sql populated.
+                                      require_foundry_key auth. HTTP 400 on missing fields,
+                                      HTTP 500 on unexpected error, HTTP 200 on success.
+
 
 - src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
                                       Builds QueryContext, calls run_app_identifier(),
@@ -474,8 +483,18 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                               C1-C2 intent guard, D1-D3 success,
                                               E1 schema not found.
 
-tests/api/tools/test_validator_tool.py      ← NEW V0. New test file — mirrors test_nl_to_ir_tool.py pattern
-                                            ← V1. 13 scenarios covering auth, field validation, business errors, success path, schema errors  
+-tests/api/tools/test_validator_tool.py      ← NEW V0. New test file — mirrors test_nl_to_ir_tool.py pattern
+                                            ← V1. 13 scenarios covering auth, field validation, business errors, success path, schema errors
+-tests/api/tools/test_sql_builder_tool.py  ← NEW V0. 9 tests:
+                                            A1 missing key → 401,
+                                            A2 wrong key → 401,
+                                            A3 client key on tool endpoint → 401,
+                                            A4 correct foundry key passes auth,
+                                            B1 structured_query=None → 400 MISSING_CONTEXT_FIELDS,
+                                            D1 valid context → 200 sql populated contains SELECT,
+                                            D2 response matches ToolResponse shape,
+                                            D3 request_id echoed unchanged,
+                                            D4 context.status="success".                                          
 
 - tests/llm/test_base.py                    ← NEW V0. 3 tests: A1-A3.
 - tests/llm/test_mock_provider.py           ← NEW V0. 6 tests: B1-B6.
@@ -882,7 +901,12 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - RESPONSE_SENT log emitted at end of query.py after pipeline completes.
 - errors[] in QueryResponse is populated from context.error dict (set by orchestrator).
   Single error entry on failure, empty list on success.
-    
+
+### SQL Builder Tool Endpoint (5.5)
+- stage_name in ContextValidator registry uses hyphens ("sql-builder") — must match exactly. Underscore variant ("sql_builder") raises ValueError → 500. Hyphen isthe convention for all stage slugs matching URL path segments.
+- _GOLDEN_STRUCTURED_QUERY in tests must use exact Pydantic field names: table_name (not name) for ResolvedTable and ResolvedJoin.422 is the signal that field names in the test payload don't match the model.
+- No Group C (business error) tests — run_sql_builder() has only one pre-condition guard (structured_query is None) which is already covered by B1 at the HTTP layer. Internal SQL builder logic is tested in tests/sql/test_sql_builder.py.
+
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
