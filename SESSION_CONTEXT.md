@@ -22,26 +22,30 @@
 - 3.7 ✅ Partial Pipeline Wire-up + Intent Guard
 - 4.1 ✅ NL-to-IR Tool Endpoint (all tests passing)
 - 4.2 ✅ Table & Column Validator (all tests passing)
-- 4.3 ✅Join Resolver
-- 4.4 ✅ Rule Applicato
-
-
+- 4.3 ✅ Join Resolver
+- 4.4 ✅ Rule Applicator
+- 4.5 ✅ Structured Query Builder 
+- 4.6 ✅ Validator Tool Endpoint 
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
 Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 Sprint 3 — LLM Layer ✅ COMPLETE
+Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 
 ## Current Sprint
 Sprint 4 — Schema Mapping & Validation
 
 ## Current Story
-4.3 — Join Resolver ✅ COMPLETE
-4.4 — Rule Applicator ✅ COMPLETE
+4.5 — Structured Query Builder ✅ COMPLETE
+4.6 — Validator Tool Endpoint ✅ COMPLETE
+
+## Next Sprint 
+Sprint 5 — SQL Builder
 
 ## Next Story
-4.5 — Structured Query Builder
-4.6 — Validator Tool Endpoint
+Story 5.1 — Select Builder
+
 
 ## Files Built So Far
 
@@ -156,7 +160,7 @@ Sprint 4 — Schema Mapping & Validation
                                       app.state.llm_provider_ok now set at startup.
                                     ← V3. Registered nl_to_ir_tool router
                                       under prefix="/v1/tools".
-
+                                    ← V4. Registered validator_tool router under /v1/tools
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
 - src/api/auth.py                   ← new in 2.4 (require_client_key, require_foundry_key)
@@ -206,7 +210,10 @@ Sprint 4 — Schema Mapping & Validation
                                       app_id, app_schema_version) via ContextValidator.
                                       Runs Intent Guard then NL-to-IR Strategy.
                                       Returns ToolResponse with updated QueryContext.
-                                      Auth via Depends(require_foundry_key).                                        
+                                      Auth via Depends(require_foundry_key).  
+
+src/api/tools/validator_tool.py     ← NEW V0. endpoint — mirrors nl_to_ir_tool.py pattern exactly
+                                    ← V1. POST /v1/tools/validator — runs full validator chain, returns StructuredQuery
 
 - src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
                                       Builds QueryContext, calls run_app_identifier(),
@@ -390,7 +397,7 @@ src/validator/structured_query_builder.py       ← V0. Translates enriched Quer
 - tests/validator/test_structured_query_builder.py ← NNW V0 11 scenarios covering happy path, self-join alias resolution, error logging
 - tests/validator/test_join_resolver.py            ← NEW V0. 16 tests: A1 single table, B1-B3 direct joins, C1-C3 self-join hierarchy, D1-D2 junction
                                                     bridge, E1 no join path, F1-F4 alias generation, G1 logging.
-                                                  ← Added class H — 3 scenarios for role stamping on columns and filters
+                                                  ← V1 Added class H — 3 scenarios for role stamping on columns and filters
 - tests/validator/test_rule_applicator.py         ← NEW V0. 19 tests: A1-A3 active record, B1-B2 versioning, C1-C3 hierarchy, D1-D3 suppress tokens,
                                                     E1 deduplication, F1 logging, plus TestQualifyCondition unit tests.
 
@@ -415,6 +422,9 @@ src/validator/structured_query_builder.py       ← V0. Translates enriched Quer
                                               A1-A4 auth, B1-B4 context validation,
                                               C1-C2 intent guard, D1-D3 success,
                                               E1 schema not found.
+
+tests/api/tools/test_validator_tool.py      ← NEW V0. New test file — mirrors test_nl_to_ir_tool.py pattern
+                                            ← V1. 13 scenarios covering auth, field validation, business errors, success path, schema errors  
 
 - tests/llm/test_base.py                    ← NEW V0. 3 tests: A1-A3.
 - tests/llm/test_mock_provider.py           ← NEW V0. 6 tests: B1-B6.
@@ -743,6 +753,17 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Deduplication via seen: set[str] — exact string match. c.VersionTermDate IS NULL appearing in both active_record and versioning.active_condition - correctly deduplicated to one entry.
 - Rule applicator depends on aliases already set by join resolver — must run after 4.3 in pipeline.
 
+### Structured Query Builder (4.5)
+- (table, role) composite key used for alias lookup in structured query builder. Non-self-join tables use (table, None) — same pattern handles both cases uniformly.
+- Role stamped in join_resolver (not query builder) — single source of truth. Same _match_hierarchy_role() function used for tables, columns, and filters.
+- Fail fast on ambiguous self-join — StructuredQueryBuildError raised if a column or filter on a self-join table has role=None. Silent wrong SQL is worse than a clear error.
+- output_alias defaults to column name in Phase 1. Phase 3 extension point for user-specified aliases ("name as Name").
+- Error logged before raising in structured_query_builder — STRUCTURED_QUERY_BUILT log stage emitted with status: failed before exception propagates to orchestrator.
+
+### Validator Tool Endpoint (4.6)
+- SchemaLoadError caught separately before NL2SQLBaseError — infrastructure error returns HTTP 500. Business errors return HTTP 200. Order of except blocks matters: specific before general.
+- SCHEMA_LOAD_ERROR returned on unknown app_id — more informative than generic INTERNAL_ERROR. Test corrected to match.
+- Single NL2SQLBaseError handler for all business errors — covers all four validator stages. Tech debt comment added for future split if HTTP codes diverge.
 
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
@@ -792,3 +813,9 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Full LLM layer redesign documented across all sections
 - See architecture document v1.6 (consolidated from PART1 + PART2 + PART3 md files)
 - Key sections changed: 2, 3.1, 4, 6, 7, 8, 10, 12, 13, 14, 16, 17
+
+### Story  (Architecture v1.7)
+- Updated Section 6.3 — QueryContext field descriptions
+
+### Story 4.5 (Architecture v1.8)
+-Updated Section 2.3 Tech Debt Added pt 3 -6.

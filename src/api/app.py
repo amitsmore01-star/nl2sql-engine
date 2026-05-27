@@ -5,6 +5,7 @@
 #                 app.state.llm_provider and app.state.llm_provider_ok now set.
 #                 Orchestrator and tool endpoints read llm_provider from app.state.
 # V3 - Story 4.1: Registered nl_to_ir_tool router under prefix="/v1/tools".
+# V4 - Story 4.6: Registered validator_tool router under prefix="/v1/tools".
 #
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
@@ -167,5 +168,9 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     # nl_to_ir_tool: POST /v1/tools/nl-to-ir — Story 4.1
     from src.api.tools.nl_to_ir_tool import router as nl_to_ir_tool_router
     app.include_router(nl_to_ir_tool_router, prefix="/v1/tools")
+
+    # validator_tool: POST /v1/tools/validator — Story 4.6
+    from src.api.tools.validator_tool import router as validator_tool_router
+    app.include_router(validator_tool_router, prefix="/v1/tools")
 
     return app
