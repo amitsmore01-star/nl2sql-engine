@@ -22,6 +22,10 @@
 - 3.7 ✅ Partial Pipeline Wire-up + Intent Guard
 - 4.1 ✅ NL-to-IR Tool Endpoint (all tests passing)
 - 4.2 ✅ Table & Column Validator (all tests passing)
+- 4.3 ✅Join Resolver
+- 4.4 ✅ Rule Applicato
+
+
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -32,10 +36,12 @@ Sprint 3 — LLM Layer ✅ COMPLETE
 Sprint 4 — Schema Mapping & Validation
 
 ## Current Story
-4.2 — Table & Column Validator ✅ COMPLETE
+4.3 — Join Resolver ✅ COMPLETE
+4.4 — Rule Applicator ✅ COMPLETE
 
 ## Next Story
-4.3 — Join Resolver
+4.5 — Structured Query Builder
+4.6 — Validator Tool Endpoint
 
 ## Files Built So Far
 
@@ -97,12 +103,13 @@ Sprint 4 — Schema Mapping & Validation
 - src/core/exceptions.py            ← SchemaLoadError only in 1.4
                                     ← V1 in 2.1 (all 11 exception subclasses added)
                                     ← V2 in 2.5 (MissingContextFieldsError extended with
-                                            missing_fields: list[str] | None = None parameter.
-                                            Defaults to [] so all existing callers unaffected.
-                                            Callers inspect error.missing_fields directly
-                                            rather than parsing the message string.)
-                                    ← V3. Added UnknownProviderError class.Raised by LLMProviderFactory when provider string does not match any known provider.
+                                      missing_fields: list[str] | None = None parameter.
+                                      Defaults to [] so all existing callers unaffected.
+                                      Callers inspect error.missing_fields directly
+                                      rather than parsing the message string.)
+                                    ← V3.AddedUnknownProviderError class.RaisedbyLLMProviderFactory when provider string does not match any known provider.
                                     ← V4. Added UnknownStrategyError class. Raised by NLToIRStrategyFactory when nl_to_ir_strategy value does not match any registered strategy.
+                                    ← V5. Added StructuredQueryBuildError for self-join alias resolution failures
 
 - src/core/constants.py             ← new in 1.6 (log stage constants only)
                                     ← updated in 2.1 (all 12 error code constants added)
@@ -114,6 +121,7 @@ Sprint 4 — Schema Mapping & Validation
                                     ← V3. Replaced LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT
                                       with INTENT_GUARD_RESULT + LLM_OUTPUT.
                                       Added UNKNOWN_STRATEGY error code constant.
+                                    ← V4. Added STRUCTURED_QUERY_BUILD_ERROR error code  
 
 - src/core/models.py                ← new in 2.1 (QueryContext + StructuredQuery + sub-models)
                                     KEY CONSTRAINTS discovered in 2.5:
@@ -133,6 +141,8 @@ Sprint 4 — Schema Mapping & Validation
                                       (including source field) so join resolver and
                                       rule applicator have full context.
                                       resolved_joins remains list[str] for now.
+                                     ← V3. Changed resolved_joins from list[str] to list[dict] with on_conditions: list[dict] shape. Updated resolved_tables comment to document alias and role enrichment.
+                                     ← V4. ResolvedJoin — replaced on_left/on_right with on_conditions: list[dict] to support multi-condition joins      
 
 - src/core/logging/log_models.py    ← new in 1.6
 - src/core/logging/logger.py        ← new in 1.6
@@ -233,6 +243,14 @@ Sprint 4 — Schema Mapping & Validation
                                             check. Populates resolved_tables and resolved_columns
                                             with full dicts (source preserved). Emits
                                             VALIDATION_RESULT log on success.                                      
+src/validator/join_resolver.py            ← NEW V0. run_join_resolver(context, schema_repo, logger). Schema-driven alias generation, hierarchy role
+                                            assignment, self-join detection, junction auto-bridging. Emits VALIDATION_RESULT log.
+                                          ← V1. Stamps role on resolved_columns and resolved_filters entries for self-join tables. Tech debt comments added on raise sites
+src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(context, schema_repo, logger). 
+                                            Applies active_record, versioning, hierarchy conditions with alias prefix. Suppress token check. Deduplication. Emits VALIDATION_RESULT log.
+src/validator/structured_query_builder.py       ← V0. Translates enriched QueryContext dicts into typed StructuredQuery model. 
+                                                  Logs error before raising on self-join alias ambiguity
+
 
 - src/llm/base.py                   ← NEW V0. LLMProvider ABC.
                                       Two abstract methods: complete() and provider_name().
@@ -369,6 +387,12 @@ Sprint 4 — Schema Mapping & Validation
                                                   A1-A4 table happy path, B1-B3 table failure,
                                                   C1-C3 column happy path, D1-D3 column failure,
                                                   E1-E3 ordering and logging. 
+- tests/validator/test_structured_query_builder.py ← NNW V0 11 scenarios covering happy path, self-join alias resolution, error logging
+- tests/validator/test_join_resolver.py            ← NEW V0. 16 tests: A1 single table, B1-B3 direct joins, C1-C3 self-join hierarchy, D1-D2 junction
+                                                    bridge, E1 no join path, F1-F4 alias generation, G1 logging.
+                                                  ← Added class H — 3 scenarios for role stamping on columns and filters
+- tests/validator/test_rule_applicator.py         ← NEW V0. 19 tests: A1-A3 active record, B1-B2 versioning, C1-C3 hierarchy, D1-D3 suppress tokens,
+                                                    E1 deduplication, F1 logging, plus TestQualifyCondition unit tests.
 
 - tests/api/test_models.py                  ← new in 2.3
 - tests/api/test_auth.py                    ← new in 2.4 (A1-A5, B1-B5, C1-C3, D1-D2)
@@ -703,7 +727,23 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - CapturingLogger pattern introduced in tests/validator/conftest.py —
   in-memory logger for asserting log stage and payload without file I/O.
   Will be reused in all subsequent validator test stories.
-  
+
+### Join Resolver  (4.3)
+- Resolved_joins shape: list[dict] with consistent on_conditions: list[dict] for all joins (single or multi-condition). SQL builder renders AND between multiple conditions. on_left/on_right flat fields rejected — cannot represent multi-condition self-joins.
+- Self-join second instance collects ALL conditions into one join dict: primary self-relationship (a_top.AccID = a_sub.ParentAccID) plus additional direct relationships from all other anchored tables (c.CustomerID = a_sub.CustomerID). Single INNER JOIN Major.Acc a_sub ON ... AND ... in output.
+- Alias generation fully schema-driven — no hardcoding. Priority: _ split → starts uppercase (CamelCase initials) → all lowercase (first 3 chars). Single-word uppercase names (Customer → c, Acc → a) correctly handled by checking display_name[0].isupper() not "has uppercase after char 0".
+- Hierarchy role assigned by matching source field against schema hierarchy synonyms (case-insensitive whole-word). Role written back into resolved_tables entry as "role" key alongside "alias" key. No match → warning logged, alias auto-generated (a, a_2), no error raised.
+- Junction auto-bridging: junction table appears in resolved_joins only — never added to resolved_tables.
+- Single table query: alias assigned, resolved_joins = [], no error.
+
+### Rule Applicator  (4.4)
+- Applied_rules: list[str] kept — simple SQL strings, SQL builder drops them directly into WHERE. No rule_type dict — complexity not justified since all rules go into WHERE regardless of type.
+- Suppress tokens checked per-table against nl_query_original (case-insensitive substring). Only active_record rules suppressed — versioning and hierarchy conditions always applied.
+- _qualify_condition() scans all uppercase-starting tokens, skips known SQL keywords/functions using word.upper() in _SQL_KEYWORDS (case-insensitive), prefixes only the first non-keyword token (the column). Handles ISNULL, isnull, Isnull correctly.
+- Deduplication via seen: set[str] — exact string match. c.VersionTermDate IS NULL appearing in both active_record and versioning.active_condition - correctly deduplicated to one entry.
+- Rule applicator depends on aliases already set by join resolver — must run after 4.3 in pipeline.
+
+
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.

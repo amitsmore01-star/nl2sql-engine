@@ -4,6 +4,9 @@
 # V2 - Story 2.5: MissingContextFieldsError extended with missing_fields: list[str] attribute.
 # V3 - Story 3.1: Added UnknownProviderError for unrecognised LLM provider strings.
 # V4 - Story 3.5: Added UnknownStrategyError for unrecognised NL-to-IR strategy strings.
+# V5 - Story 4.5: Added StructuredQueryBuildError for alias resolution failures
+#      in the structured query builder (e.g. self-join column with unresolvable role).
+#
 # All custom exceptions for the nl2sql-engine.
 # Every exception carries a machine-readable code and a human-readable message.
 # Codes must match the constants defined in src/core/constants.py exactly.
@@ -23,6 +26,7 @@ from src.core.constants import (
     INTERNAL_ERROR,
     UNKNOWN_PROVIDER,
     UNKNOWN_STRATEGY,
+    STRUCTURED_QUERY_BUILD_ERROR,
 )
 
 
@@ -131,6 +135,21 @@ class LLMOutputParseError(NL2SQLBaseError):
     """
     def __init__(self, message: str) -> None:
         super().__init__(code=LLM_OUTPUT_PARSE_ERROR, message=message)
+
+
+class StructuredQueryBuildError(NL2SQLBaseError):
+    """
+    Raised when the structured query builder cannot resolve a column or filter
+    to a specific table alias.
+
+    Most common cause: a self-join table (e.g. Major.Acc appears twice) where
+    the column or filter source phrase did not match any hierarchy synonym,
+    so the builder cannot determine which alias (a_top vs a_sub) to use.
+
+    HTTP status: 200 — business error, pipeline handled it gracefully.
+    """
+    def __init__(self, message: str) -> None:
+        super().__init__(code=STRUCTURED_QUERY_BUILD_ERROR, message=message)
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@
 # V3 - Story 3.5: Replaced LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT
 #      with INTENT_GUARD_RESULT + LLM_OUTPUT (architecture v1.6 redesign).
 #      Added UNKNOWN_STRATEGY error code constant.
+# V4 - Story 4.5: Added STRUCTURED_QUERY_BUILD_ERROR error code constant.
 #
 # Shared constants for the nl2sql-engine.
 # Story 1.6: Log stage constants.
@@ -35,14 +36,15 @@ USER_FEEDBACK          = "USER_FEEDBACK"
 # ---------------------------------------------------------------------------
 
 # Business errors — HTTP 200 (pipeline handled the error gracefully)
-APP_NOT_DETERMINED     = "APP_NOT_DETERMINED"     # No app matched in NL query
-MULTIPLE_APPS_MATCHED  = "MULTIPLE_APPS_MATCHED"  # NL query matched 2+ apps
-NO_RELEVANT_TABLES     = "NO_RELEVANT_TABLES"     # LLM proposed tables not in schema
-NO_RELEVANT_COLUMNS    = "NO_RELEVANT_COLUMNS"    # LLM proposed columns not in table
-NO_JOIN_PATH           = "NO_JOIN_PATH"           # No join path between required tables
-UNSUPPORTED_INTENT     = "UNSUPPORTED_INTENT"     # Intent is not 'select'
-VALIDATION_FAILED      = "VALIDATION_FAILED"      # Validator rejected LLM proposals
-LLM_OUTPUT_PARSE_ERROR = "LLM_OUTPUT_PARSE_ERROR" # LLM returned malformed JSON
+APP_NOT_DETERMINED          = "APP_NOT_DETERMINED"          # No app matched in NL query
+MULTIPLE_APPS_MATCHED       = "MULTIPLE_APPS_MATCHED"       # NL query matched 2+ apps
+NO_RELEVANT_TABLES          = "NO_RELEVANT_TABLES"          # LLM proposed tables not in schema
+NO_RELEVANT_COLUMNS         = "NO_RELEVANT_COLUMNS"         # LLM proposed columns not in table
+NO_JOIN_PATH                = "NO_JOIN_PATH"                # No join path between required tables
+UNSUPPORTED_INTENT          = "UNSUPPORTED_INTENT"          # Intent is not 'select'
+VALIDATION_FAILED           = "VALIDATION_FAILED"           # Validator rejected LLM proposals
+LLM_OUTPUT_PARSE_ERROR      = "LLM_OUTPUT_PARSE_ERROR"      # LLM returned malformed JSON
+STRUCTURED_QUERY_BUILD_ERROR = "STRUCTURED_QUERY_BUILD_ERROR" # Cannot build StructuredQuery from context
 
 # Tool endpoint error — HTTP 400
 # Returned when a Foundry tool endpoint receives a QueryContext missing required fields.

@@ -6,6 +6,13 @@
 #      list[str] to list[dict]. Each entry preserves the full dict from llm_output
 #      (including source field) so join resolver and rule applicator have full context.
 #      resolved_joins remains list[str] — join resolver populates it in Story 4.3.
+# V3 - Story 4.3: Changed resolved_joins from list[str] to list[dict].
+#      Each entry is a join dict: {join_type, table_name, alias, on_conditions}.
+#      Join resolver also enriches resolved_tables entries with alias and role keys.
+# V4 - Story 4.5: Updated ResolvedJoin — replaced on_left/on_right (single condition)
+#      with on_conditions: list[dict] to match join resolver output exactly.
+#      Each condition dict has "left" and "right" keys.
+#      Supports multi-condition joins (e.g. self-joins with 2+ ON conditions).
 #
 # Shared Pydantic models used across the entire nl2sql-engine pipeline.
 #
@@ -17,7 +24,7 @@
 # Sub-models (building blocks for StructuredQuery):
 #   ResolvedTable   — a table confirmed to exist in the schema, with its alias
 #   ResolvedColumn  — a column confirmed to belong to its table, with output alias
-#   ResolvedJoin    — a join between two tables, with the ON condition
+#   ResolvedJoin    — a join between two tables, with one or more ON conditions
 #   ResolvedFilter  — a user-driven filter condition (from the NL query)
 
 from __future__ import annotations
@@ -56,27 +63,45 @@ class ResolvedColumn(BaseModel):
     """
     table_alias: str    # Alias of the table this column belongs to e.g. "cd"
     column_name: str    # Actual column name in the schema e.g. "CustomerName"
-    output_alias: str   # Label in the SELECT clause e.g. "CustomerName", "TopAccName"
+    output_alias: str   # Label in the SELECT clause e.g. "CustomerName"
+                        # Defaults to column_name in Phase 1.
+                        # Phase 3: extend for user-specified aliases ("name as Name").
 
 
 class ResolvedJoin(BaseModel):
     """
     A JOIN between two tables, fully resolved from the schema relationships.
+    Supports single and multi-condition ON clauses (e.g. self-joins).
 
-    Example:
+    on_conditions is a list of {"left": "...", "right": "..."} dicts.
+    Single-condition join:  one entry in on_conditions.
+    Multi-condition join:   two or more entries (e.g. self-join).
+
+    Example (single condition):
         ResolvedJoin(
             join_type="INNER JOIN",
             table_name="Major.CustomerDemographics",
             alias="cd",
-            on_left="c.CustomerID",
-            on_right="cd.CustomerID"
+            on_conditions=[{"left": "c.CustomerID", "right": "cd.CustomerID"}]
+        )
+
+    Example (multi-condition self-join):
+        ResolvedJoin(
+            join_type="INNER JOIN",
+            table_name="Major.Acc",
+            alias="a_sub",
+            on_conditions=[
+                {"left": "a_top.AccID",    "right": "a_sub.ParentAccID"},
+                {"left": "c.CustomerID",   "right": "a_sub.CustomerID"},
+            ]
         )
     """
-    join_type: str = "INNER JOIN"  # Defaults to INNER JOIN — only type used in Phase 1
-    table_name: str                # Full schema-qualified name of the joined table
-    alias: str                     # Alias for the joined table in SQL
-    on_left: str                   # Left side of ON condition e.g. "c.CustomerID"
-    on_right: str                  # Right side of ON condition e.g. "cd.CustomerID"
+    join_type: str = "INNER JOIN"              # Only type used in Phase 1
+    table_name: str                            # Full schema-qualified name of joined table
+    alias: str                                 # Alias for the joined table in SQL
+    on_conditions: list[dict] = Field(default_factory=list)
+    # Each entry: {"left": "alias.Column", "right": "alias.Column"}
+    # SQL builder renders as: ON left = right [AND left = right ...]
 
 
 class ResolvedFilter(BaseModel):
@@ -190,34 +215,48 @@ class QueryContext(BaseModel):
     # --- Validator outputs ---
     resolved_tables: list[dict[str, Any]] = Field(default_factory=list)
     # Validated table entries from llm_output.tables.
-    # Each entry is a full dict: {"table": "Major.Customer", "source": "customer"}
+    # Each entry starts as: {"table": "Major.Customer", "source": "customer"}
+    # Join resolver enriches each entry with "alias" and optionally "role":
+    #   {"table": "Major.Customer", "source": "customer", "alias": "c"}
+    #   {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"}
     # Preserves duplicates (e.g. Major.Acc twice for self-join) so join resolver
     # can use the source field to assign hierarchy roles (top_acc, sub_acc).
     # Changed from list[str] in V2 — list[str] lost source, breaking hierarchy.
 
     resolved_columns: list[dict[str, Any]] = Field(default_factory=list)
     # Validated column entries from llm_output.columns.
-    # Each entry is a full dict: {"table": "Major.CustomerDemographics",
-    #                              "column": "CustomerName", "source": "customer name"}
-    # Table-qualified to avoid ambiguity when two tables share a column name.
+    # Each entry starts as: {"table": "Major.CustomerDemographics",
+    #                         "column": "CustomerName", "source": "customer name"}
+    # Join resolver V1 stamps "role" on entries for self-join tables:
+    #   {"table": "Major.Acc", "column": "AccName", "source": "top acc name",
+    #    "role": "top_Acc"}
     # Changed from list[str] in V2 — same reason as resolved_tables.
 
     resolved_filters: list[dict[str, Any]] = Field(default_factory=list)
     # Validated filter entries from llm_output.filters.
-    # Each entry is a full dict: {"table": "Major.Customer", "column": "CustomerCID",
-    #                              "operator": "=", "value": "ASA", "source": "..."}
+    # Each entry starts as: {"table": "Major.Customer", "column": "CustomerCID",
+    #                         "operator": "=", "value": "ASA", "source": "..."}
+    # Join resolver V1 stamps "role" on entries for self-join tables.
     # Changed from list[str] in V2 — rule applicator needs full dict in Story 4.4.
 
-    resolved_joins: list[str] = Field(default_factory=list)
+    resolved_joins: list[dict[str, Any]] = Field(default_factory=list)
     # Join graph result — populated by join resolver in Story 4.3.
-    # Kept as list[str] for now; join resolver will define the final shape.
+    # Each entry is a join dict:
+    #   {"join_type": "INNER JOIN", "table_name": "Major.CustomerDemographics",
+    #    "alias": "cd", "on_conditions": [{"left": "c.CustomerID", "right": "cd.CustomerID"}]}
+    # on_conditions is a list — supports multi-condition self-joins.
+    # Changed from list[str] in V3. on_left/on_right replaced with on_conditions in V4.
 
     applied_rules: list[str] = Field(default_factory=list)
     # Business rules injected by the rule applicator.
+    # Each entry is a fully-qualified SQL condition string:
+    #   "c.VersionTermDate IS NULL"
+    #   "ISNULL(c.DeletedFlag, 0) = 0"
+    #   "a_top.AccLevelConfig = 0"
 
     # --- Final outputs ---
     structured_query: Optional[StructuredQuery] = None
-    # Built by StructuredQueryBuilder. SQL Builder reads this.
+    # Built by StructuredQueryBuilder in Story 4.5. SQL Builder reads this.
 
     sql: Optional[str] = None
     # Final SQL string. Populated by SQLBuilder.
@@ -252,7 +291,6 @@ class QueryContext(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         """Called by Pydantic after __init__ completes. Marks model as initialised."""
-        # Use object.__setattr__ to bypass our own override and set the flag directly.
         object.__setattr__(self, "_initialised", True)
 
     def __setattr__(self, name: str, value: Any) -> None:
