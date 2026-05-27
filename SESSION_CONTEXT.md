@@ -26,6 +26,7 @@
 - 4.4 ✅ Rule Applicator
 - 4.5 ✅ Structured Query Builder 
 - 4.6 ✅ Validator Tool Endpoint 
+- 5.1 ✅ Select Builder (all tests passing)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -34,17 +35,13 @@ Sprint 3 — LLM Layer ✅ COMPLETE
 Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 
 ## Current Sprint
-Sprint 4 — Schema Mapping & Validation
-
-## Current Story
-4.5 — Structured Query Builder ✅ COMPLETE
-4.6 — Validator Tool Endpoint ✅ COMPLETE
-
-## Next Sprint 
 Sprint 5 — SQL Builder
 
+## Current Story
+5.1 — Select Builder ✅ COMPLETE
+
 ## Next Story
-Story 5.1 — Select Builder
+Story 5.2 — Join Builder
 
 
 ## Files Built So Far
@@ -359,6 +356,12 @@ src/validator/structured_query_builder.py       ← V0. Translates enriched Quer
                                           TODO (Story 5.4): add validator + SQL builder stages.
                                         ← TO UPDATE in Story 5.4 (V1 — final)
 
+src/sql/select_builder.py   ← NEW V0. build_select(structured_query, default_top_rows) -> str.
+                            Builds SELECT TOP N clause from StructuredQuery.columns.
+                            Pads alias.ColumnName to max width so AS keywords align.
+                            top_rows=0 or default_top_rows=0 → omits TOP clause.
+                            Pure function — no logging, no LLM, no schema lookups.
+
 ### Tests
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
                                             ← updated in 1.6 (log_dir assertion fixed)
@@ -449,6 +452,10 @@ tests/api/tools/test_validator_tool.py      ← NEW V0. New test file — mirror
                                                 B3 unknown app stops at App Identifier,
                                                 B4 status=success on clean run,
                                                 B5 app_id populated after valid run.
+
+tests/sql/test_select_builder.py    ← NEW V0. 8 tests: single column, multiple columns,
+                                      user top_rows override, zero TOP (default and user),
+                                      empty columns, AS alignment, golden Section 9.3 clause.
 
 ### Init Files
 - All __init__.py files (25 total) ← created in 1.1
@@ -764,6 +771,17 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - SchemaLoadError caught separately before NL2SQLBaseError — infrastructure error returns HTTP 500. Business errors return HTTP 200. Order of except blocks matters: specific before general.
 - SCHEMA_LOAD_ERROR returned on unknown app_id — more informative than generic INTERNAL_ERROR. Test corrected to match.
 - Single NL2SQLBaseError handler for all business errors — covers all four validator stages. Tech debt comment added for future split if HTTP codes diverge.
+
+### Select Builder (5.1)
+- build_select() trusts output_alias exactly as given — no defaulting logic here.
+  Defaulting output_alias to column_name is structured_query_builder.py's responsibility (4.5).
+- TOP logic: structured_query.top_rows takes precedence over default_top_rows.
+  Effective value of 0 (either source) → TOP clause omitted entirely.
+- Alignment: all alias.ColumnName parts padded with ljust(max_width) so AS keywords
+  align vertically — matches golden SQL formatting in architecture Section 9.3.
+- Trailing comma on every column line except the last.
+- Empty columns list → returns header only, no crash.
+- Returns SELECT clause string only — FROM/JOIN/WHERE assembled by sql_builder.py (Story 5.4).
 
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
