@@ -7,6 +7,7 @@
 # V3 - Story 4.1: Registered nl_to_ir_tool router under prefix="/v1/tools".
 # V4 - Story 4.6: Registered validator_tool router under prefix="/v1/tools".
 # V5 - Story 5.5: Registered sql_builder_tool router under /v1/tools.
+# V6 - Story 5.6: Registered app_identifier_tool router under /v1/tools.
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
 #   1. Loads settings (YAML + .env)
@@ -176,5 +177,9 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     # sql_builder_tool: POST /v1/tools/sql-builder — Story 5.5
     from src.api.tools.sql_builder_tool import router as sql_builder_tool_router
     app.include_router(sql_builder_tool_router, prefix="/v1/tools")
-    
+
+    # app_identifier_tool: POST /v1/tools/app-identifier — Story 5.6
+    from src.api.tools.app_identifier_tool import router as app_identifier_tool_router
+    app.include_router(app_identifier_tool_router, prefix="/v1/tools")
+
     return app

@@ -31,6 +31,7 @@
 - 5.3 ✅ Where Builder (all tests passing)
 - 5.4 ✅ SQL Orchestrator & Final Pipeline Wire-up (all tests passing)
 - 5.5 ✅ SQL Builder Tool Endpoint
+- 5.6 ✅ App Identifier Tool Endpoint (all tests passing)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -43,10 +44,10 @@ Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 Sprint 5 — SQL Builder 
 
 ## Current Story
-5.5 — SQL Builder Tool Endpoint ✅ COMPLETE
+5.6 — App Identifier Tool Endpoint ✅ COMPLETE
 
 ## Next Story
-5.6 — App Identifier Tool Endpoint
+5.7 — Full Pipeline Tool Endpoint (tools/query)
 
 
 ## Files Built So Far
@@ -166,6 +167,7 @@ Sprint 5 — SQL Builder
                                       under prefix="/v1/tools".
                                     ← V4. Registered validator_tool router under /v1/tools
                                     ← V5. Registered sql_builder_tool router under prefix="/v1/tools".
+                                     ← V6. Registered app_identifier_tool router under prefix="/v1/tools".
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
 - src/api/auth.py                   ← new in 2.4 (require_client_key, require_foundry_key)
@@ -225,6 +227,12 @@ src/api/tools/sql_builder_tool.py   ← NEW V0. POST /v1/tools/sql-builder.
                                       returns ToolResponse with context.sql populated.
                                       require_foundry_key auth. HTTP 400 on missing fields,
                                       HTTP 500 on unexpected error, HTTP 200 on success.
+- src/api/tools/app_identifier_tool.py  ← NEW V0. POST /v1/tools/app-identifier.
+                                          Validates nl_query_original via ContextValidator(stage "app-identifier"). Runs Intent Guard then run_app_identifier(). Returns ToolResponse with app_id and app_schema_version populated.
+                                          Sets context.status="success" on success.
+                                          Business errors (APP_NOT_DETERMINED, MULTIPLE_APPS_MATCHED) → HTTP 200 with error
+                                          in context. HTTP 400 on missing fields.
+                                          HTTP 500 on unexpected error. require_foundry_key auth.
 
 
 - src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
@@ -906,6 +914,18 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - stage_name in ContextValidator registry uses hyphens ("sql-builder") — must match exactly. Underscore variant ("sql_builder") raises ValueError → 500. Hyphen isthe convention for all stage slugs matching URL path segments.
 - _GOLDEN_STRUCTURED_QUERY in tests must use exact Pydantic field names: table_name (not name) for ResolvedTable and ResolvedJoin.422 is the signal that field names in the test payload don't match the model.
 - No Group C (business error) tests — run_sql_builder() has only one pre-condition guard (structured_query is None) which is already covered by B1 at the HTTP layer. Internal SQL builder logic is tested in tests/sql/test_sql_builder.py.
+
+### App Identifier Tool Endpoint (5.6)
+- nl_query_original is str (required, no default, not Optional) on QueryContext.
+  Sending None → Pydantic 422 before handler runs. Cannot reach ContextValidator.
+  Test B1 asserts 422 — that is the correct protection, just enforced by Pydantic.
+  Empty string "" → passes Pydantic, caught by ContextValidator → 400.
+- run_app_identifier() does not set context.status="success" — endpoint is
+  responsible for marking the final outcome after successful return.
+- Intent Guard runs before app identifier — non-select queries blocked before
+  any schema matching occurs. app_id remains "" on UNSUPPORTED_INTENT.
+- Business errors (APP_NOT_DETERMINED, MULTIPLE_APPS_MATCHED) → HTTP 200 with
+  error in context. Never HTTP 4xx for business logic failures.
 
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
