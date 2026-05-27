@@ -27,6 +27,7 @@
 - 4.5 ✅ Structured Query Builder 
 - 4.6 ✅ Validator Tool Endpoint 
 - 5.1 ✅ Select Builder (all tests passing)
+- 5.2 ✅ Join Builder (all tests passing)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -38,10 +39,10 @@ Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 Sprint 5 — SQL Builder
 
 ## Current Story
-5.1 — Select Builder ✅ COMPLETE
+5.2 — Join Builder ✅ COMPLETE
 
 ## Next Story
-Story 5.2 — Join Builder
+5.3 — Where Builder
 
 
 ## Files Built So Far
@@ -360,6 +361,15 @@ src/sql/select_builder.py   ← NEW V0. build_select(structured_query, default_t
                             Builds SELECT TOP N clause from StructuredQuery.columns.
                             Pads alias.ColumnName to max width so AS keywords align.
                             top_rows=0 or default_top_rows=0 → omits TOP clause.
+                            Pure function — no logging, no LLM, no schema lookups.
+
+src/sql/join_builder.py     ← NEW V0. build_join(structured_query) -> str.
+                            Builds FROM {table} {alias} line from tables[0].
+                            One INNER JOIN block per ResolvedJoin in joins list.
+                            Single-condition: ON left = right.
+                            Multi-condition (self-join): ON left = right / AND left = right.
+                            Join order preserved exactly as given.
+                            Empty tables list → returns "".
                             Pure function — no logging, no LLM, no schema lookups.
 
 ### Tests
@@ -783,6 +793,17 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Empty columns list → returns header only, no crash.
 - Returns SELECT clause string only — FROM/JOIN/WHERE assembled by sql_builder.py (Story 5.4).
 
+### Join Builder (5.2)
+- build_join() reads tables[0] as the FROM table — order is the contract, not a name match.
+- Multi-condition joins handled by iterating on_conditions: idx==0 → ON, idx>0 → AND.
+  No special self-join branching — the on_conditions list length drives the output naturally.
+- join_type field drives the JOIN keyword — "INNER JOIN" is the only value in Phase 1.
+  Phase 2+ can pass a different join_type without any code change.
+- Empty tables list → empty string, no crash. Caller (sql_builder.py, Story 5.4)
+  is responsible for ensuring tables is non-empty before calling.
+- Junction table test confirms PackagePlan appears in JOIN output but not in FROM —
+  consistent with junction auto-bridging rule: junction tables live in joins only.
+  
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
