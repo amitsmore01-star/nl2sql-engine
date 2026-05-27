@@ -13,6 +13,10 @@
 #      with on_conditions: list[dict] to match join resolver output exactly.
 #      Each condition dict has "left" and "right" keys.
 #      Supports multi-condition joins (e.g. self-joins with 2+ ON conditions).
+# V5 - Story 5.3: Added connector: str = "AND" to ResolvedFilter.
+#      Defaults to "AND" so all existing callers are unaffected.
+#      Allows OR conditions in WHERE clause (e.g. CustomerCID = 'ASA' OR CustomerCID = 'XYZ').
+#      build_where() reads this field to emit AND or OR between filter conditions.
 #
 # Shared Pydantic models used across the entire nl2sql-engine pipeline.
 #
@@ -109,18 +113,50 @@ class ResolvedFilter(BaseModel):
     A user-driven filter condition extracted from the NL query.
     These come from what the user asked for — not from business rules.
 
-    Example:
+    connector controls how this condition joins to the PREVIOUS condition
+    in the WHERE clause. The first condition never emits a connector.
+
+    connector values:
+        "AND"  — default; condition is ANDed with the previous one
+        "OR"   — condition is ORed with the previous one
+
+    IS NULL / IS NOT NULL operators:
+        When operator is "IS NULL" or "IS NOT NULL", the value field is
+        ignored entirely. build_where() renders: alias.Column IS NULL
+
+    Example (equality filter):
         ResolvedFilter(
             table_alias="c",
             column_name="CustomerCID",
             operator="=",
-            value="ASA"
+            value="ASA",
+            connector="AND"
+        )
+
+    Example (OR filter):
+        ResolvedFilter(
+            table_alias="c",
+            column_name="CustomerCID",
+            operator="=",
+            value="XYZ",
+            connector="OR"
+        )
+
+    Example (IS NULL filter):
+        ResolvedFilter(
+            table_alias="c",
+            column_name="VersionTermDate",
+            operator="IS NULL",
+            value="",
+            connector="AND"
         )
     """
-    table_alias: str    # Alias of the table e.g. "c"
-    column_name: str    # Column to filter on e.g. "CustomerCID"
-    operator: str       # SQL operator e.g. "=", ">", "LIKE"
-    value: str          # Filter value e.g. "ASA"
+    table_alias: str          # Alias of the table e.g. "c"
+    column_name: str          # Column to filter on e.g. "CustomerCID"
+    operator: str             # SQL operator e.g. "=", ">", "LIKE", "IS NULL", "IS NOT NULL"
+    value: str = ""           # Filter value e.g. "ASA". Ignored for IS NULL / IS NOT NULL.
+    connector: str = "AND"    # How this condition joins to the previous one: "AND" | "OR"
+                              # The first filter in the list never emits a connector.
 
 
 # ---------------------------------------------------------------------------
