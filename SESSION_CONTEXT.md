@@ -32,6 +32,7 @@
 - 5.4 ✅ SQL Orchestrator & Final Pipeline Wire-up (all tests passing)
 - 5.5 ✅ SQL Builder Tool Endpoint
 - 5.6 ✅ App Identifier Tool Endpoint (all tests passing)
+- 5.7 ✅ Full Pipeline Tool Endpoint (tools/query)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -44,10 +45,10 @@ Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 Sprint 5 — SQL Builder 
 
 ## Current Story
-5.6 — App Identifier Tool Endpoint ✅ COMPLETE
+Story 5.7 — Full Pipeline Tool Endpoint (tools/query) ✅ COMPLETE
 
 ## Next Story
-5.7 — Full Pipeline Tool Endpoint (tools/query)
+5.8 — Golden E2E Test
 
 
 ## Files Built So Far
@@ -233,7 +234,10 @@ src/api/tools/sql_builder_tool.py   ← NEW V0. POST /v1/tools/sql-builder.
                                           Business errors (APP_NOT_DETERMINED, MULTIPLE_APPS_MATCHED) → HTTP 200 with error
                                           in context. HTTP 400 on missing fields.
                                           HTTP 500 on unexpected error. require_foundry_key auth.
-
+src/api/tools/query_tool.py         ← POST /v1/tools/query — Foundry one-shot full pipeline
+                                      endpoint. Accepts QueryContext with nl_query_original,
+                                      calls run_pipeline(), returns ToolResponse with fully
+                                      populated QueryContext including sql.
 
 - src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
                                       Builds QueryContext, calls run_app_identifier(),
@@ -503,6 +507,10 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                             D2 response matches ToolResponse shape,
                                             D3 request_id echoed unchanged,
                                             D4 context.status="success".                                          
+- tests/api/tools/test_query_tool.py  ← 19 tests across 5 groups (Auth, Context Validation,
+                                      Intent Guard, Success, APP_NOT_DETERMINED). Group D
+                                      overrides app.state.llm_provider inside the TestClient
+                                      with block after lifespan runs.
 
 - tests/llm/test_base.py                    ← NEW V0. 3 tests: A1-A3.
 - tests/llm/test_mock_provider.py           ← NEW V0. 6 tests: B1-B6.
@@ -927,6 +935,11 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Business errors (APP_NOT_DETERMINED, MULTIPLE_APPS_MATCHED) → HTTP 200 with
   error in context. Never HTTP 4xx for business logic failures.
 
+### Full Pipeline Tool Endpoint (tools/query) (5.7)
+- Story 5.7: Why tools/query exists alongside /v1/query — Both call run_pipeline(). The difference is auth key (FOUNDRY_API_KEY vs CLIENT_API_KEY) and response shape (ToolResponse with full QueryContext vs QueryResponse with clean SQL-focused shape). Foundry agent needs the full context to inspect every field.
+- Story 5.7: LLM override timing in tests — app.state.llm_provider must be overridden INSIDE the with TestClient(app) as client: block, on the line after it opens. Lifespan runs when the block opens and overwrites any pre-open override. Setting it after open means lifespan is done and the override sticks.
+- Story 5.7: Individual tool endpoints vs tools/query — Foundry agent has two modes: call stages one-by-one (fine-grained inspection) or call tools/query for one-shot full pipeline. Both patterns are supported.
+
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
@@ -942,6 +955,10 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 ### Bug Fix (single_call.py — 3.6)
 - context.status was never set to "success" after clean execute(). QueryContext defaults
   to "pending". Added context.status = "success" before the log emit and return.
+
+### Bug Fix (test_query_tool.py — 3.6)
+- Story 5.7: Factory MockLLMProvider placeholder — LLMProviderFactory.create() returns MockLLMProvider(responses=["mock_response"]) — a placeholder string, not valid IR JSON. Success tests that reach the LLM stage must override app.state.llm_provider with MockLLMProvider(responses=[_GOLDEN_IR]) inside the TestClient block. Tests that stop before the LLM (auth, validation, intent guard, app-not-determined) use the factory default unchanged.
+
 
 ### Azure AI Foundry Provider (Adhoc added)
 - Static api-key header used — same pattern as all other providers
