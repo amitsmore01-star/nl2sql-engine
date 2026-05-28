@@ -182,4 +182,7 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     from src.api.tools.app_identifier_tool import router as app_identifier_tool_router
     app.include_router(app_identifier_tool_router, prefix="/v1/tools")
 
+    # app_identifier_tool: POST /v1/tools/query_tool — Story 5.7
+    from src.api.tools.query_tool import router as query_tool_router
+    app.include_router(query_tool_router, prefix="/v1/tools", tags=["tools"])
     return app
