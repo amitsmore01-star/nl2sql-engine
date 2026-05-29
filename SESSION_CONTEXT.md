@@ -33,6 +33,7 @@
 - 5.5 ✅ SQL Builder Tool Endpoint
 - 5.6 ✅ App Identifier Tool Endpoint (all tests passing)
 - 5.7 ✅ Full Pipeline Tool Endpoint (tools/query)
+- 5.8 ✅ Golden E2E Test (all tests passing — Part A exact match, Part B data-driven, Diagnostic)
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -45,10 +46,10 @@ Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 Sprint 5 — SQL Builder 
 
 ## Current Story
-Story 5.7 — Full Pipeline Tool Endpoint (tools/query) ✅ COMPLETE
+Story 5.8 — Golden E2E Test ✅ COMPLETE
 
 ## Next Story
-5.8 — Golden E2E Test
+5.9 — LLM Matching Robustness & Schema Vocabulary
 
 
 ## Files Built So Far
@@ -75,9 +76,9 @@ Story 5.7 — Full Pipeline Tool Endpoint (tools/query) ✅ COMPLETE
                                      ← TO UPDATE. Add strict synonym matching rule to rules.tables section. Add strict_synonym_matching
                                       example. Add to default example_set.
 - config/mock_responses.json        ← NEW V0. Mock LLM responses for JSON mode.
-                                      Each entry has user_input (exact match string) and
-                                      llm_response (IR JSON string). First entry:
+                                      Each entry has user_input (exact match string) and llm_response (IR JSON string). First entry:
                                       "give me topaccount name for customer ASA".
+                                    ← V1 (Story 5.8). Added app_id field to entries without "in ABC" (App Identifier needs explicit app_id when query has no app synonym). Added final_sql field to each entry — populated by scripts/generate_mock_sql.py, used by Part B data-driven E2E assertions.
 
 ### Schemas
 - schemas/ABC_app.json
@@ -280,9 +281,12 @@ src/api/tools/query_tool.py         ← POST /v1/tools/query — Foundry one-sho
                                             check. Populates resolved_tables and resolved_columns
                                             with full dicts (source preserved). Emits
                                             VALIDATION_RESULT log on success.                                      
-src/validator/join_resolver.py            ← NEW V0. run_join_resolver(context, schema_repo, logger). Schema-driven alias generation, hierarchy role
-                                            assignment, self-join detection, junction auto-bridging. Emits VALIDATION_RESULT log.
-                                          ← V1. Stamps role on resolved_columns and resolved_filters entries for self-join tables. Tech debt comments added on raise sites
+src/validator/join_resolver.py            ← NEW V0. run_join_resolver(context, schema_repo, logger). Schema-driven alias generation,
+                                            hierarchy role assignment, self-join detection, junction auto-bridging. Emits VALIDATION_RESULT log.
+                                          ← V1. Stamps role on resolved_columns and resolved_filters entries for self-join tables.
+                                            Tech debt comments added on raise sites
+                                          ← V2 (Story 5.8). Fixed duplicate join condition in self-join additional conditions.  
+                                            Forward + reverse relationship lookups both ran unconditionally, adding c.CustomerID = a_sub.CustomerID twice. Reverse lookup now runs only as fallback (if/else) when no forward relationship exists.
 src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(context, schema_repo, logger). 
                                             Applies active_record, versioning, hierarchy conditions with alias prefix. Suppress token check. Deduplication. Emits VALIDATION_RESULT log.
 src/validator/structured_query_builder.py       ← V0. Translates enriched QueryContext dicts into typed StructuredQuery model. 
@@ -427,6 +431,25 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                   Pure assembly — no LLM, no schema lookups.                                                   
 
 ### Tests
+- scripts/generate_mock_sql.py      ← NEW V0 (Story 5.8). Standalone helper (not a test).
+                                      Runs each mock_responses.json entry through the full
+                                      pipeline via TestClient + MockLLMProvider (JSON mode),
+                                      prints resulting SQL to paste back as final_sql.
+                                      Reads app_id from entry when present.
+
+- test_e2e.py                 ← NEW V0 (Story 5.8). Golden E2E suite. TestGoldenExactMatch (Part A): golden query via
+                                /v1/query + /v1/tools/query, exact SQL match, 8 log stages verified (VALIDATION_RESULT x3).
+                                TestDataDriven (Part B): each mock_responses.json entry with final_sql asserted exactly.
+                                TestDiagnostic: prints SQL per entry, no assertions.
+                                ← V1. Root conftest.py fixes 401. LOG_DIR via monkeypatch before create_app() fixes empty log stages.
+                                ← V2. _GOLDEN_SQL updated to actual output. A4 expects VALIDATION_RESULT x3 (one per validator sub-stage).
+                                ← V3. _GOLDEN_SQL updated after join_resolver V2 fix — a_sub join now has single c.CustomerID condition.
+
+- tests/conftest.py                 ← NEW V0 (Story 5.8). Root-level autouse fixture
+                                      injects ENV, CLIENT_API_KEY, FOUNDRY_API_KEY,
+                                      LLM_PROVIDER for all tests. tests/api/conftest.py
+                                      only covered tests/api/** — test_e2e.py at root
+                                      was getting 401. Same env vars, project-wide scope.
 - tests/config/test_settings.py             ← new in 1.2 (33 tests)
                                             ← updated in 1.6 (log_dir assertion fixed)
                                             ← V2. Replaced step1/step2 token target refs.
@@ -940,6 +963,18 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Story 5.7: LLM override timing in tests — app.state.llm_provider must be overridden INSIDE the with TestClient(app) as client: block, on the line after it opens. Lifespan runs when the block opens and overwrites any pre-open override. Setting it after open means lifespan is done and the override sticks.
 - Story 5.7: Individual tool endpoints vs tools/query — Foundry agent has two modes: call stages one-by-one (fine-grained inspection) or call tools/query for one-shot full pipeline. Both patterns are supported.
 
+### Golden E2E Test (5.8)
+- E2E suite split into three classes: Part A (exact SQL + log stage verification, must never fail), Part B (data-driven from mock_responses.json with final_sql), Diagnostic (print-only, no assertions, run with pytest -s).
+- New test cases need NO code change — add a mock_responses.json entry with user_input, llm_response, final_sql (and app_id if no "in ABC" in query).
+- Root tests/conftest.py required — tests/api/conftest.py scope is tests/api/** only.
+  E2E lives at tests/ root and was returning 401 until root conftest added.
+- LOG_DIR must be set via monkeypatch BEFORE create_app() — load_settings() reads
+  LOG_DIR inside lifespan when the TestClient block opens. Setting it after = too late.
+- Validator chain emits VALIDATION_RESULT three times (table/column validator,
+  join resolver, rule applicator) — expected stage list must account for all three.
+- A2 reads SQL from data["context"]["sql"] (ToolResponse shape); A1 reads from
+  data["data"]["sql"] (QueryResponse shape). Same SQL, different envelope per endpoint.
+
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
@@ -959,6 +994,13 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 ### Bug Fix (test_query_tool.py — 3.6)
 - Story 5.7: Factory MockLLMProvider placeholder — LLMProviderFactory.create() returns MockLLMProvider(responses=["mock_response"]) — a placeholder string, not valid IR JSON. Success tests that reach the LLM stage must override app.state.llm_provider with MockLLMProvider(responses=[_GOLDEN_IR]) inside the TestClient block. Tests that stop before the LLM (auth, validation, intent guard, app-not-determined) use the factory default unchanged.
 
+### Bug Fix (join_resolver.py — 5.8)
+- Self-join additional-conditions block ran forward (a_schema→t_name) and reverse
+  (t_schema→a_name) relationship lookups unconditionally. When the same relationship
+  exists on both sides of the schema (Customer↔Acc CustomerID), both lookups matched
+  and c.CustomerID = a_sub.CustomerID was added twice. Fixed: reverse lookup is now
+  an else-branch fallback, runs only when forward lookup returns nothing. Surfaced by
+  golden E2E test A1/A2 — duplicate AND line in the a_sub INNER JOIN ON clause.
 
 ### Azure AI Foundry Provider (Adhoc added)
 - Static api-key header used — same pattern as all other providers
@@ -998,3 +1040,11 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 
 ### Story 4.5 (Architecture v1.8)
 -Updated Section 2.3 Tech Debt Added pt 3 -6.
+
+---
+
+### Story 5.8 (Architecture v1.9)
+- Section 2.3 Tech Debt — added items 7–11 (single-instance hierarchy, schema
+  vocabulary gap, LLM semantic matching, temperature config, second prompt example).
+- Section 9.3 — verified golden SQL matches actual pipeline output (no TOP 10000,
+  AS AccName aliases, a_sub includes c.CustomerID condition, per-Acc TermDate).

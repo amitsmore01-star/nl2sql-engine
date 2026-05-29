@@ -162,8 +162,8 @@ class TestEnvSecretsLoad:
         """API_KEY from environment is available on settings.api_key."""
         _set_env(monkeypatch, BASE_ENV)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.client_api_key  == "your-client-api-key-here"
-        assert settings.foundry_api_key  == "your-foundry-api-key-here"
+        assert settings.client_api_key  == "test-client-key-12345"
+        assert settings.foundry_api_key  == "test-foundry-key-67890"
 
     def test_optional_openai_key_loaded(self, monkeypatch):
         """OPENAI_API_KEY from environment is available on settings.openai_api_key."""

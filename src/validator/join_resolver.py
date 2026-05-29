@@ -1,6 +1,11 @@
 # src/validator/join_resolver.py
 # V0 - Initial implementation
 # V1 - Story 4.5: Stamp "role" on resolved_columns and resolved_filters entries
+# V2 - Story 5.8: Fixed duplicate join condition in self-join additional conditions.
+#      Both forward and reverse relationship lookups were running unconditionally,
+#      adding c.CustomerID = a_sub.CustomerID twice when the same relationship
+#      exists on both sides of the schema. Reverse lookup now only runs as fallback
+#      when no forward relationship is found (if/else instead of two separate fors).
 #      for self-join tables. Uses the same _match_hierarchy_role() function already
 #      used for table entries — single source of truth, zero duplication.
 #      This enables structured_query_builder to use (table, role) as a composite
@@ -283,17 +288,24 @@ def _resolve_joins_for_tables(
                 if a_schema is None:
                     continue
 
-                for from_col, to_col in _find_all_direct_relationships(a_schema, t_name):
-                    on_conditions.append({
-                        "left": f"{a_alias}.{from_col}",
-                        "right": f"{t_alias}.{to_col}",
-                    })
-
-                for from_col, to_col in _find_all_direct_relationships(t_schema, a_name):
-                    on_conditions.append({
-                        "left": f"{a_alias}.{to_col}",
-                        "right": f"{t_alias}.{from_col}",
-                    })
+                # Try forward direction first: a_schema -> t_name
+                # e.g. Major.Customer.CustomerID -> Major.Acc.CustomerID
+                forward = _find_all_direct_relationships(a_schema, t_name)
+                if forward:
+                    for from_col, to_col in forward:
+                        on_conditions.append({
+                            "left": f"{a_alias}.{from_col}",
+                            "right": f"{t_alias}.{to_col}",
+                        })
+                else:
+                    # Fallback: reverse direction — only runs when no forward
+                    # relationship exists. Prevents duplicates when the same
+                    # relationship is defined on both sides of the schema.
+                    for from_col, to_col in _find_all_direct_relationships(t_schema, a_name):
+                        on_conditions.append({
+                            "left": f"{a_alias}.{to_col}",
+                            "right": f"{t_alias}.{from_col}",
+                        })
 
             if on_conditions:
                 joins.append({
