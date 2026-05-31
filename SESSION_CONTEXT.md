@@ -41,18 +41,16 @@ Sprint 1 — Foundation ✅ COMPLETE
 Sprint 2 — Core Models, Auth & App Identifier ✅ COMPLETE
 Sprint 3 — LLM Layer ✅ COMPLETE
 Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
-
+Sprint 5 — SQL Builder ✅ COMPLETE
 
 ## Current Sprint
-Sprint 5 — SQL Builder 
+Sprint 6 — Feedback, API Completion & Tool Integration Tests
 
 ## Current Story
-Story 5.9 — Tech Debt Closure + Hierarchy/Filter Fixes ✅ COMPLETE
+Story 6.1 — Feedback Endpoint ✅ COMPLETE
 
 ## Next Story
-Story 5.10 (TBD) — confirm from architecture doc before starting.
-NOTE: A dedicated LLM-reliability story is queued (see "Future Story — LLM Reliability" below).
-Decide whether it runs as the last Phase 1 story or moves to Phase 2.
+Story 6.2 — Global Exception Handler
 
 
 ## Files Built So Far
@@ -178,7 +176,10 @@ Decide whether it runs as the last Phase 1 story or moves to Phase 2.
                                       under prefix="/v1/tools".
                                     ← V4. Registered validator_tool router under /v1/tools
                                     ← V5. Registered sql_builder_tool router under prefix="/v1/tools".
-                                     ← V6. Registered app_identifier_tool router under prefix="/v1/tools".
+                                    ← V6. Registered app_identifier_tool router under prefix="/v1/tools".
+                                    ← V7 (Story 6.1). Registered feedback router
+                                     (POST /v1/feedback) under prefix="/v1".
+
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
 - src/api/auth.py                   ← new in 2.4 (require_client_key, require_foundry_key)
@@ -274,6 +275,9 @@ src/api/tools/query_tool.py         ← POST /v1/tools/query — Foundry one-sho
                                       errors[] list replaces context.error dict for business errors.
                                       Emits RESPONSE_SENT log after pipeline completes.
                                       _build_response() helper extracted for 500 and 200 paths.
+- src/api/v1/feedback.py            ← NEW V0 (Story 6.1). POST /v1/feedback. Accepts
+                                      FeedbackRequest, logs USER_FEEDBACK entry, returns
+                                      success envelope {request_id, status, errors}.
 
   - src/validator/app_identifier.py       ← new in 2.2
                                             V1. Bug fix: logger.log() now receives
@@ -538,6 +542,10 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                               + StageRequirements direct unit tests. All passing.
                                             ← V1. Replaced intent-extractor/schema-mapper
                                                tests with nl-to-ir tests. Updated validator tests for llm_output. Registry count: 6 → 5 stages.
+- tests/api/v1/test_feedback.py     ← NEW V0 (Story 6.1). 14 tests:
+                                      A1-A4 auth, B1-B4 Pydantic validation,
+                                      C1-C3 success envelope, D1-D3 logging
+                                      (StructuredLogger patched, LogEntry inspected).
 
 - tests/api/tools/test_feedback_tool.py     ← new in 2.5. 2 tests: 501 + Phase 3 message.
 - tests/api/tools/test_nl_to_ir_tool.py     ← NEW V0. 13 tests:
@@ -1002,7 +1010,7 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - A2 reads SQL from data["context"]["sql"] (ToolResponse shape); A1 reads from
   data["data"]["sql"] (QueryResponse shape). Same SQL, different envelope per endpoint.
 
-### Key Decisions Made — Story 5.9
+### Key Decisions Made —  (5.9)
 - DD-1: Column-first table derivation — REJECTED. Confirmed against the real IR: the COUNT target table lives ONLY in llm_output.tables (see prompts.yaml aggregation_with_limit example), so deriving tables from columns+filters loses it; also loses filter-only and junction/bridge tables. Evidence-based rejection.
 - DD-2: Aggregation-switch derivation (use LLM list only when aggregation present) — REJECTED. Two code paths, fixes only the COUNT hole, branches on a signal that doesn't predict when the LLM list is needed; collapses into Path A anyway.
 - DD-3: Table source-of-truth = trust the LLM tables list and CLEAN it (Path A). It is the only structure carrying column-tables, filter-only tables, and COUNT-target tables. Permanent design, not a stopgap.
@@ -1016,6 +1024,15 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - KI-2 — Bug #13 may silently drop a legitimate fused-word duplicate. Resolved once Bug #14 lands.
 - KI-6 — mitigated: matching logic centralised in synonym_matching.py (single upgrade point).
 
+### Feedback Endpoint Response Shape (6.1)
+- POST /v1/feedback returns {request_id, status, errors} only — no data/meta blocks.
+- data/meta describe a SQL result (sql, app_id, tokens, latency) — none of those
+  fields apply to feedback submission. Using them would require inventing meaningless
+  values or making fields Optional when they are required everywhere else.
+- A dedicated FeedbackResponse model is deferred to Story 6.4 (Response Consistency
+  audit) — if one is needed it will be decided there.
+- user_id="" in the logged LogEntry — FeedbackRequest carries no user_id. Empty string
+  follows the same "not populated" convention as QueryContext.app_id = "".
 
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have

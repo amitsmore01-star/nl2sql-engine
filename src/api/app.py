@@ -8,6 +8,7 @@
 # V4 - Story 4.6: Registered validator_tool router under prefix="/v1/tools".
 # V5 - Story 5.5: Registered sql_builder_tool router under /v1/tools.
 # V6 - Story 5.6: Registered app_identifier_tool router under /v1/tools.
+# V7 - Story 6.1: Registered feedback router (POST /v1/feedback) under prefix="/v1".
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
 #   1. Loads settings (YAML + .env)
@@ -161,6 +162,10 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     from src.api.v1.query import router as query_router
     app.include_router(query_router, prefix="/v1")
 
+    # User-facing feedback endpoint — POST /v1/feedback
+    from src.api.v1.feedback import router as feedback_router
+    app.include_router(feedback_router, prefix="/v1")
+
     # Foundry tool routers — all under /v1/tools
     # feedback_tool: POST /v1/tools/feedback — Phase 3 placeholder, returns 501
     from src.api.tools.feedback_tool import router as feedback_tool_router
@@ -186,3 +191,6 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     from src.api.tools.query_tool import router as query_tool_router
     app.include_router(query_tool_router, prefix="/v1/tools", tags=["tools"])
     return app
+
+    
+
