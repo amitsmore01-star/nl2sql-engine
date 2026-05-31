@@ -9,6 +9,8 @@
 # V5 - Story 5.5: Registered sql_builder_tool router under /v1/tools.
 # V6 - Story 5.6: Registered app_identifier_tool router under /v1/tools.
 # V7 - Story 6.1: Registered feedback router (POST /v1/feedback) under prefix="/v1".
+# V8 - Story 6.2: Registered global exception handlers via register_exception_handlers().
+
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
 #   1. Loads settings (YAML + .env)
@@ -152,6 +154,10 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     # ----------------------------------------------------------------
     # Register routers
     # ----------------------------------------------------------------
+
+    # Register global exception handlers — must be before any routers
+    from src.api.middleware import register_exception_handlers
+    register_exception_handlers(app)
 
     # Health endpoints — no prefix, no auth (GET /health, GET /ready)
     from src.api.health import router as health_router

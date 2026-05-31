@@ -34,7 +34,8 @@
 - 5.6 ✅ App Identifier Tool Endpoint (all tests passing)
 - 5.7 ✅ Full Pipeline Tool Endpoint (tools/query)
 - 5.8 ✅ Golden E2E Test (all tests passing — Part A exact match, Part B data-driven, Diagnostic)
-- 5.9 ✅ Tech Debt Closure + Hierarchy/Filter Fixes — COMPLETE
+- 5.9 ✅ Tech Debt Closure + Hierarchy/Filter Fixes 
+- 6.1 ✅ Feedback Endpoint
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -47,10 +48,10 @@ Sprint 5 — SQL Builder ✅ COMPLETE
 Sprint 6 — Feedback, API Completion & Tool Integration Tests
 
 ## Current Story
-Story 6.1 — Feedback Endpoint ✅ COMPLETE
+Story 6.2 — Global Exception Handler ✅ COMPLETE
 
 ## Next Story
-Story 6.2 — Global Exception Handler
+Story 6.3 — Apps Endpoint
 
 
 ## Files Built So Far
@@ -179,7 +180,18 @@ Story 6.2 — Global Exception Handler
                                     ← V6. Registered app_identifier_tool router under prefix="/v1/tools".
                                     ← V7 (Story 6.1). Registered feedback router
                                      (POST /v1/feedback) under prefix="/v1".
-
+                                    ← V8 (Story 6.2). Registered global exception handlers
+                                      via register_exception_handlers() immediately after
+                                      FastAPI instance created, before routers.                                    
+- src/api/middleware.py             ← NEW V0 (Story 6.2). Global exception handlers.
+                                      MissingContextFieldsError → HTTP 400 (exc.message
+                                      returned — architecture says list missing fields).
+                                      Exception (catch-all) → HTTP 500 (safe generic message
+                                      only — full detail in log). HTTPException and
+                                      RequestValidationError delegated back to FastAPI's
+                                      built-in handlers so auth (401) and validation (422)
+                                      continue to work normally.
+                                      register_exception_handlers(app) called from app.py.
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
 - src/api/auth.py                   ← new in 2.4 (require_client_key, require_foundry_key)
@@ -492,6 +504,14 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                             ← V1 in 2.4 (CLIENT_API_KEY + FOUNDRY_API_KEY)
 - tests/api/test_health.py                  ← new in 1.5 (27 tests)
                                             ← updated in 1.6 (log_dir path fixed)
+- tests/api/test_middleware.py      ← NEW V0 (Story 6.2). 13 tests:
+                                      A1-A4 MissingContextFieldsError → 400,
+                                      B1-B4 RuntimeError → 500,
+                                      C1-C3 safe response (raw detail never in body),
+                                      D1-D2 logging verified (StructuredLogger patched,
+                                      LogEntry payload inspected).
+                                      Test-only throw routes added via app.add_api_route()
+                                      — no production code modified.                                            
 - tests/core/logging/test_log_models.py     ← new in 1.6 (M1-M9)
 - tests/core/logging/test_logger.py         ← new in 1.6 (L1-L17)
 - tests/core/test_models.py                 ← new in 2.1
@@ -1034,6 +1054,27 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - user_id="" in the logged LogEntry — FeedbackRequest carries no user_id. Empty string
   follows the same "not populated" convention as QueryContext.app_id = "".
 
+### Global Exception Handler (6.2)
+- register_exception_handlers(app) called in create_app() immediately after
+  FastAPI() instantiation, before all routers — ensures handlers are in place
+  before any route can raise.
+- HTTPException and RequestValidationError explicitly delegated back to FastAPI's
+  built-in handlers inside _handle_unhandled_exception. Without this guard,
+  registering an Exception handler intercepts all FastAPI-internal exceptions
+  including auth 401s and Pydantic 422s.
+- MissingContextFieldsError response uses exc.message (curated, includes missing
+  field names) — architecture Section 13.1 says response body must list missing
+  fields so agent can fix its call.
+- Exception (500) response uses a fixed safe generic message — raw error detail
+  goes to log only, never to caller.
+- _try_log() wraps StructuredLogger in try/except — logging failure can never
+  prevent the structured error response from being returned.
+- Middleware only fires when exception escapes a route handler. Properly handled
+  business errors (caught inside pipeline/route) are logged by the route handler
+  — no double-logging, no missed logging.
+- Test-only throw routes added via app.add_api_route() inside tests — standard
+  FastAPI pattern, keeps production code clean.
+  
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
