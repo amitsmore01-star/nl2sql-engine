@@ -36,6 +36,7 @@
 - 5.8 ✅ Golden E2E Test (all tests passing — Part A exact match, Part B data-driven, Diagnostic)
 - 5.9 ✅ Tech Debt Closure + Hierarchy/Filter Fixes 
 - 6.1 ✅ Feedback Endpoint
+- 6.3 ✅ Apps Endpoint
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -48,10 +49,10 @@ Sprint 5 — SQL Builder ✅ COMPLETE
 Sprint 6 — Feedback, API Completion & Tool Integration Tests
 
 ## Current Story
-Story 6.2 — Global Exception Handler ✅ COMPLETE
+Story 6.3 — Apps Endpoint ✅ COMPLETE
 
 ## Next Story
-Story 6.3 — Apps Endpoint
+Story 6.4 — API Response Consistency
 
 
 ## Files Built So Far
@@ -182,7 +183,10 @@ Story 6.3 — Apps Endpoint
                                      (POST /v1/feedback) under prefix="/v1".
                                     ← V8 (Story 6.2). Registered global exception handlers
                                       via register_exception_handlers() immediately after
-                                      FastAPI instance created, before routers.                                    
+                                      FastAPI instance created, before routers. 
+                                     ← V9 (Story 6.3). Registered apps router
+                                      (GET /v1/apps) under prefix="/v1".
+
 - src/api/middleware.py             ← NEW V0 (Story 6.2). Global exception handlers.
                                       MissingContextFieldsError → HTTP 400 (exc.message
                                       returned — architecture says list missing fields).
@@ -290,6 +294,15 @@ src/api/tools/query_tool.py         ← POST /v1/tools/query — Foundry one-sho
 - src/api/v1/feedback.py            ← NEW V0 (Story 6.1). POST /v1/feedback. Accepts
                                       FeedbackRequest, logs USER_FEEDBACK entry, returns
                                       success envelope {request_id, status, errors}.
+- src/api/v1/apps.py                ← NEW V0 (Story 6.3). GET /v1/apps.
+                                      Reads app.state.schema_repo.get_all_schemas(),
+                                      returns {request_id, status, data.apps, errors}.
+                                      data.apps = [{app_id, version}] per loaded schema.
+                                      AppSchema.appId normalised to snake_case app_id
+                                      in response to match API convention.
+                                      schema_repo None → RuntimeError → global handler
+                                      → HTTP 500 INTERNAL_ERROR.
+                                      request_id generated per call (GET, no body).v
 
   - src/validator/app_identifier.py       ← new in 2.2
                                             V1. Bug fix: logger.log() now receives
@@ -556,17 +569,21 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                               C3 meta.app_id correct, C4 request_id echoed, C5 status=success.
                                               D1-D3 errors[] list (not context.error dict).
                                               E1 HTTP 500 errors[0].code=INTERNAL_ERROR.
-
-- tests/api/tools/test_context_validator.py ← new in 2.5
-                                              Groups: A1-A6, B1-B5, C1-C2, D1-D4, E1-E2, F1-F4
-                                              + StageRequirements direct unit tests. All passing.
-                                            ← V1. Replaced intent-extractor/schema-mapper
-                                               tests with nl-to-ir tests. Updated validator tests for llm_output. Registry count: 6 → 5 stages.
 - tests/api/v1/test_feedback.py     ← NEW V0 (Story 6.1). 14 tests:
                                       A1-A4 auth, B1-B4 Pydantic validation,
                                       C1-C3 success envelope, D1-D3 logging
                                       (StructuredLogger patched, LogEntry inspected).
-
+- tests/api/v1/test_apps.py         ← NEW V0 (Story 6.3). 12 tests:
+                                      A1-A4 auth, B1-B4 success content
+                                      (ABC_app present, version 1.0, app_id+version
+                                      per entry), C1-C3 response shape,
+                                      D1 schema_repo=None → 500 INTERNAL_ERROR
+                                      via global exception handler.
+- tests/api/tools/test_context_validator.py ← new in 2.5
+                                              Groups: A1-A6, B1-B5, C1-C2, D1-D4, E1-E2, F1-F4
+                                              + StageRequirements direct unit tests. All passing.
+                                            ← V1. Replaced intent-extractor/schema-mapper
+                                               tests with nl-to-ir tests. Updated validator tests for llm_output. Registry count: 6 → 5 stages.                                      
 - tests/api/tools/test_feedback_tool.py     ← new in 2.5. 2 tests: 501 + Phase 3 message.
 - tests/api/tools/test_nl_to_ir_tool.py     ← NEW V0. 13 tests:
                                               A1-A4 auth, B1-B4 context validation,
@@ -1074,6 +1091,17 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
   — no double-logging, no missed logging.
 - Test-only throw routes added via app.add_api_route() inside tests — standard
   FastAPI pattern, keeps production code clean.
+
+### Apps Endpoint Response Shape (6.3)
+- GET /v1/apps returns {request_id, status, data: {apps: [...]}, errors}.
+  No meta block — no SQL result, token count, or latency to report.
+- Each app entry: {app_id, version}. AppSchema.appId (camelCase from JSON)
+  normalised to snake_case app_id in the response — consistent with the
+  convention used everywhere else in the API (QueryContext, QueryResponse).
+- request_id generated fresh per call — GET has no body to read one from.
+- schema_repo None handled by raising RuntimeError, caught by global
+  exception handler (Story 6.2) → HTTP 500. Consistent with query.py's
+  same broken-startup guard pattern.  
   
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have

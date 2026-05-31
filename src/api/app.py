@@ -10,6 +10,7 @@
 # V6 - Story 5.6: Registered app_identifier_tool router under /v1/tools.
 # V7 - Story 6.1: Registered feedback router (POST /v1/feedback) under prefix="/v1".
 # V8 - Story 6.2: Registered global exception handlers via register_exception_handlers().
+# V9 - Story 6.3: Registered apps router (GET /v1/apps) under prefix="/v1".
 
 # Factory function that creates and configures the FastAPI application.
 # Runs a startup event that:
@@ -171,6 +172,10 @@ def create_app(schema_dir: str | Path | None = None) -> FastAPI:
     # User-facing feedback endpoint — POST /v1/feedback
     from src.api.v1.feedback import router as feedback_router
     app.include_router(feedback_router, prefix="/v1")
+
+    # User-facing apps endpoint — GET /v1/apps
+    from src.api.v1.apps import router as apps_router
+    app.include_router(apps_router, prefix="/v1")
 
     # Foundry tool routers — all under /v1/tools
     # feedback_tool: POST /v1/tools/feedback — Phase 3 placeholder, returns 501
