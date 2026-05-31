@@ -6,11 +6,30 @@
 #      adding c.CustomerID = a_sub.CustomerID twice when the same relationship
 #      exists on both sides of the schema. Reverse lookup now only runs as fallback
 #      when no forward relationship is found (if/else instead of two separate fors).
-#      for self-join tables. Uses the same _match_hierarchy_role() function already
+#      for self-join tables. Uses the same match_hierarchy_role() function already
 #      used for table entries — single source of truth, zero duplication.
 #      This enables structured_query_builder to use (table, role) as a composite
 #      key for alias lookup — exact match, no fuzzy source matching needed.
 #      Only self-join tables are stamped — non-self-join tables are unaffected.
+# V3 - Story 5.9: Stamp hierarchy role on single-instance hierarchy tables.
+#      Previously role was only stamped when the same table appeared twice (self-join).
+#      Now: any table with a hierarchy schema whose source matches a level synonym
+#      gets its role stamped, even when it appears only once in resolved_tables.
+#      If source matches no synonym, a warning is added to context.warnings.
+#      This ensures rule_applicator applies the correct AccLevelConfig / ParentAccID
+#      conditions for single-instance hierarchy queries.
+# V4 - Story 5.9 (cont.): Broadened _stamp_roles_on_columns_and_filters to also
+#      stamp roles on columns/filters for single-instance hierarchy tables, not
+#      just self-join tables. V3 stamped the role on the table entry but left the
+#      column/filter entries unstamped, so the structured query builder's
+#      (table, role) lookup fell through to an empty alias (broken SQL ".AccName").
+#      Now role-bearing tables = self-join tables PLUS single-instance hierarchy
+#      tables, and column/filter role stamping covers both.
+# V5 - Story 5.9 (Bug #13): Extracted _match_hierarchy_role and _table_has_hierarchy
+#      into shared module src/validator/synonym_matching.py (now match_hierarchy_role
+#      and table_has_hierarchy). Pure refactor — identical logic, imported instead of
+#      defined locally. Lets table_column_validator reuse the SAME matching logic
+#      (single source of truth). No behaviour change; existing tests must pass unchanged.
 #
 # Deterministic join resolver.
 # Resolves join paths between all tables proposed by the LLM, using only
@@ -26,15 +45,17 @@
 #      For self-joins: match each instance's "source" against hierarchy synonyms
 #      in the schema to assign a role (e.g. top_Acc, sub_Acc).
 #      Role drives alias suffix (a_top, a_sub) and conditions in rule applicator.
-#   3. Resolve join paths between all distinct tables using schema relationships.
+#   3. [V3] For single-instance tables that have a hierarchy schema: also match
+#      source against synonyms and stamp role. Warn if no match found.
+#   4. Resolve join paths between all distinct tables using schema relationships.
 #      Direct joins: found directly in table.relationships.
 #      Junction bridging: when two tables have no direct relationship but share
 #      a junction table (is_junction_table=True) that links them.
-#   4. Populate context.resolved_joins as list[dict].
+#   5. Populate context.resolved_joins as list[dict].
 #      Each join dict uses on_conditions: list[dict] with left/right keys.
 #      Consistent shape for all joins — single or multi-condition.
-#   5. Enrich context.resolved_tables entries with "alias" and optional "role" keys.
-#   6. [V1] Stamp "role" on resolved_columns and resolved_filters entries for
+#   6. Enrich context.resolved_tables entries with "alias" and optional "role" keys.
+#   7. [V1] Stamp "role" on resolved_columns and resolved_filters entries for
 #      self-join tables. Enables exact (table, role) alias lookup in query builder.
 #
 # Join dict shape (consistent for ALL joins):
@@ -73,6 +94,10 @@ from src.core.logging.log_models import LogEntry
 from src.core.logging.logger import StructuredLogger
 from src.core.models import QueryContext
 from src.schema.schema_models import AppSchema, TableSchema
+from src.validator.synonym_matching import (
+    match_hierarchy_role,
+    table_has_hierarchy,
+)
 from src.schema.schema_repository import SchemaRepository
 
 
@@ -139,34 +164,6 @@ def _resolve_alias(
     while f"{candidate}_{counter}" in assigned:
         counter += 1
     return f"{candidate}_{counter}"
-
-
-# ---------------------------------------------------------------------------
-# Hierarchy role matching
-# ---------------------------------------------------------------------------
-
-def _match_hierarchy_role(source: str, table_schema):
-    """
-    Match a source phrase against hierarchy synonyms defined in the schema.
-    Returns the role key (e.g. "top_Acc") if matched, None otherwise.
-    Matching is case-insensitive whole-word using regex boundaries.
-    """
-    if not table_schema.business_rules or not table_schema.business_rules.hierarchy:
-        return None
-
-    hierarchy = table_schema.business_rules.hierarchy
-    source_lower = source.lower()
-
-    for level_name in hierarchy.level_names():
-        level = hierarchy.get_level(level_name)
-        if level is None:
-            continue
-        for synonym in level.synonyms:
-            pattern = r"\b" + re.escape(synonym.lower()) + r"\b"
-            if re.search(pattern, source_lower):
-                return level_name
-
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -417,50 +414,63 @@ def _resolve_joins_for_tables(
 
 
 # ---------------------------------------------------------------------------
-# Role stamping for columns and filters  [V1]
+# Role stamping for columns and filters  [V1, broadened in V4]
 # ---------------------------------------------------------------------------
 
 def _stamp_roles_on_columns_and_filters(
     context: QueryContext,
-    self_join_tables: set[str],
+    role_bearing_tables: set[str],
     table_lookup: dict,
 ) -> None:
     """
     For every entry in resolved_columns and resolved_filters whose table is a
-    self-join table, match its source phrase against hierarchy synonyms and
+    role-bearing table, match its source phrase against hierarchy synonyms and
     stamp the "role" key onto the entry.
 
-    Non-self-join table entries are left untouched — no "role" key added.
+    A "role-bearing table" is any table for which the structured query builder
+    will need a (table, role) composite key to resolve the column/filter alias.
+    This is the union of:
+      - self-join tables (the same table appearing more than once), AND
+      - [V4] single-instance tables that have a hierarchy schema.
+
+    Before V4 this only covered self-join tables. That left single-instance
+    hierarchy columns/filters with role=None, so the builder's (table, None)
+    lookup returned an empty alias — producing broken SQL like ".AccName".
+    V4 includes single-instance hierarchy tables so their columns/filters get
+    the same role stamp the table entry already received.
+
+    Tables not in role_bearing_tables are left untouched — no "role" key added.
 
     Called once after all table aliases and roles have been assigned.
 
     Args:
-        context:           Pipeline state. resolved_columns and resolved_filters
-                           must be populated (by table_column_validator, Story 4.2).
-        self_join_tables:  Set of table names that appear more than once in
-                           resolved_tables (i.e. are self-join tables this request).
-        table_lookup:      table_name -> TableSchema dict for role matching.
+        context:              Pipeline state. resolved_columns and resolved_filters
+                              must be populated (by table_column_validator, Story 4.2).
+        role_bearing_tables:  Set of table names whose columns/filters need a role
+                              stamp — self-join tables plus single-instance
+                              hierarchy tables.
+        table_lookup:         table_name -> TableSchema dict for role matching.
     """
     for entry in context.resolved_columns:
         t_name = entry.get("table", "")
-        if t_name not in self_join_tables:
+        if t_name not in role_bearing_tables:
             continue
         t_schema = table_lookup.get(t_name)
         if t_schema is None:
             continue
         source = entry.get("source", "")
-        role = _match_hierarchy_role(source, t_schema)
+        role = match_hierarchy_role(source, t_schema)
         entry["role"] = role  # May be None if source is too vague
 
     for entry in context.resolved_filters:
         t_name = entry.get("table", "")
-        if t_name not in self_join_tables:
+        if t_name not in role_bearing_tables:
             continue
         t_schema = table_lookup.get(t_name)
         if t_schema is None:
             continue
         source = entry.get("source", "")
-        role = _match_hierarchy_role(source, t_schema)
+        role = match_hierarchy_role(source, t_schema)
         entry["role"] = role  # May be None if source is too vague
 
 
@@ -513,9 +523,27 @@ def run_join_resolver(
                 else t_name.split(".")[-1]
             )
             assigned: set = set()
-            alias = _resolve_alias(display_name, None, assigned)
+
+            # [V3] Check for hierarchy role even on single-instance tables.
+            # A query like "give me top acc name for customer ASA" has only one
+            # Major.Acc entry — but the source "top acc" should still drive
+            # AccLevelConfig=0 and ParentAccID IS NULL conditions in rule_applicator.
+            role = None
+            if table_has_hierarchy(t_schema):
+                source = table_instances[0].get("source", "")
+                role = match_hierarchy_role(source, t_schema)
+                if role is None:
+                    context.warnings.append(
+                        f"Table '{t_name}' has a hierarchy schema but source "
+                        f"'{source}' matched no hierarchy synonym. "
+                        f"No hierarchy role will be applied."
+                    )
+
+            alias = _resolve_alias(display_name, role, assigned)
             assigned.add(alias)
             table_instances[0]["alias"] = alias
+            if role is not None:
+                table_instances[0]["role"] = role
 
         context.resolved_joins = []
         context.status = "success"
@@ -549,13 +577,25 @@ def run_join_resolver(
         role = None
 
         if is_self_join:
+            # Self-join: must match a hierarchy synonym to distinguish instances
             source = entry.get("source", "")
-            role = _match_hierarchy_role(source, t_schema) if t_schema else None
+            role = match_hierarchy_role(source, t_schema) if t_schema else None
             if role is None:
                 context.warnings.append(
                     f"Table '{t_name}' appears multiple times but source "
                     f"'{source}' matched no hierarchy synonym. "
                     f"Alias will be auto-generated."
+                )
+        elif table_has_hierarchy(t_schema):
+            # [V3] Single instance of a hierarchy table: still try to match a role.
+            # Allows rule_applicator to apply level-specific conditions.
+            source = entry.get("source", "")
+            role = match_hierarchy_role(source, t_schema)
+            if role is None:
+                context.warnings.append(
+                    f"Table '{t_name}' has a hierarchy schema but source "
+                    f"'{source}' matched no hierarchy synonym. "
+                    f"No hierarchy role will be applied."
                 )
 
         alias = _resolve_alias(display_name, role, assigned_aliases)
@@ -565,10 +605,21 @@ def run_join_resolver(
             entry["role"] = role
 
     # ------------------------------------------------------------------
-    # [V1] Stamp role on columns and filters for self-join tables
+    # [V4] Stamp role on columns and filters for ALL role-bearing tables.
+    # Role-bearing = self-join tables PLUS single-instance hierarchy tables.
+    # Before V4 only self-join tables were stamped, leaving single-instance
+    # hierarchy columns/filters with no role — the builder then produced an
+    # empty alias (e.g. ".AccName"). Now both cases are covered.
     # ------------------------------------------------------------------
-    if self_join_tables:
-        _stamp_roles_on_columns_and_filters(context, self_join_tables, table_lookup)
+    single_instance_hierarchy_tables: set[str] = {
+        t_name
+        for t_name, count in table_name_counts.items()
+        if count == 1 and table_has_hierarchy(table_lookup.get(t_name))
+    }
+    role_bearing_tables: set[str] = self_join_tables | single_instance_hierarchy_tables
+
+    if role_bearing_tables:
+        _stamp_roles_on_columns_and_filters(context, role_bearing_tables, table_lookup)
 
     resolved_joins = _resolve_joins_for_tables(
         table_instances, table_lookup, app_schema, table_name_counts

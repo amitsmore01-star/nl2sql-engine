@@ -215,7 +215,8 @@ class TestSingleCallStrategyExecute:
         strategy.execute(context, schema_summary="table: Major.Customer [customer]")
 
         # logger.log() must have been called at least once
-        logger.log.assert_called_once()
+        #logger.log.assert_called_once()
+        assert logger.log.call_count == 2
         log_entry = logger.log.call_args[0][0]
         assert log_entry.stage == LLM_OUTPUT
 

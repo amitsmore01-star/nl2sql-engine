@@ -9,6 +9,8 @@
 #      Service refuses to start if prompts.yaml is missing or structurally invalid
 # V3 - Added azure_foundry_endpoint, azure_foundry_api_key,
 #      azure_foundry_deployment_name credential fields for Azure AI Foundry provider
+# V4 - Story 5.9: Added temperature: float = 0.0 to LLMSettings.
+#      Controls LLM output determinism. Passed through to all provider request bodies.
 #
 # Single source of truth for all configuration.
 # This is the ONLY file that reads YAML files or environment variables.
@@ -67,6 +69,9 @@ class LLMSettings(BaseModel):
     nl_to_ir_strategy:   which NLToIRStrategy to use (default: single_call)
     prompt_example_set:  which named example set from prompts.yaml to use
                          (default: default)
+    temperature:         LLM sampling temperature (default: 0 — fully deterministic).
+                         Passed through in every provider request body.
+                         Range: 0.0–2.0 for OpenAI/Azure, 0.0–1.0 for Anthropic.
     """
     model_config = ConfigDict(extra="forbid")
 
@@ -77,6 +82,7 @@ class LLMSettings(BaseModel):
     retry_backoff_seconds: int
     nl_to_ir_strategy: str
     prompt_example_set: str
+    temperature: float = 0.0
 
 
 class SQLSettings(BaseModel):

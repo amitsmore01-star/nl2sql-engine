@@ -37,6 +37,7 @@ def _make_settings(api_key: str | None = "test-anthropic-key"):
         timeout_seconds = 30
         retry_max = 3
         retry_backoff_seconds = 2
+        temperature = 0.0
 
     class _FakeSettings:
         llm = _LLM()

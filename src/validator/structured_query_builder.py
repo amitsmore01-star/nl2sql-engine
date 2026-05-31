@@ -1,5 +1,19 @@
 # src/validator/structured_query_builder.py
 # V0 - Initial implementation
+# V1 - Story 5.9 (Bug #12): Single-instance hierarchy alias-resolution fallback.
+#      Problem: a hierarchy table (e.g. Major.Acc) appearing ONCE got its role
+#      stamped on the table entry (alias a_top, role top_Acc) but the LLM
+#      sometimes dropped the hierarchy word from a column's source (e.g. "accid"
+#      instead of "top acc id"), leaving that column with role=None. The old
+#      (table, role) lookup then missed -> empty alias -> broken SQL ".AccID".
+#      Fix: build a second lookup {table_name -> alias} for SINGLE-INSTANCE tables
+#      only. When a column/filter (table, role) lookup misses AND the table is
+#      single-instance, fall back to the one alias for that table (no ambiguity
+#      possible — only one instance exists). A warning is recorded for each
+#      fallback. Self-join tables are UNAFFECTED: role=None on a self-join table
+#      still raises StructuredQueryBuildError (genuine ambiguity).
+#      Helpers stay pure (Option Y): they return (models, warnings); the main
+#      function appends warnings to context.warnings.
 #
 # Structured query builder.
 # Translates the enriched QueryContext dicts (resolved_tables, resolved_columns,
@@ -14,14 +28,19 @@
 #   - src/api/tools/validator_tool.py    (Foundry tool via POST /v1/tools/validator)
 #
 # Alias resolution strategy:
-#   Non-self-join tables: simple {table_name -> alias} lookup.
+#   Non-self-join tables: composite {(table_name, None) -> alias} lookup.
 #   Self-join tables:     composite {(table_name, role) -> alias} lookup.
-#   join_resolver V1 stamps "role" onto column and filter entries for self-join
-#   tables — so this builder uses exact (table, role) matching, no fuzzy logic.
+#   Single-instance fallback [V1]: {table_name -> alias} for tables appearing
+#     exactly once. Used only when the composite lookup misses on a
+#     single-instance table — there is exactly one alias, so it is unambiguous.
+#   join_resolver stamps "role" onto column and filter entries for hierarchy
+#   tables — so this builder uses exact (table, role) matching first, then the
+#   single-instance fallback, then (for self-join misses) raises.
 #
 # Error handling:
-#   StructuredQueryBuildError raised when a column or filter on a self-join table
+#   StructuredQueryBuildError raised when a column or filter on a SELF-JOIN table
 #   has role=None (source was too vague to match a hierarchy synonym).
+#   Single-instance tables never raise — they use the fallback.
 #   Error is logged to the log file before raising — log stage: STRUCTURED_QUERY_BUILT.
 #   Orchestrator catches this and sets context.status = "failed".
 #
@@ -46,25 +65,25 @@ from src.core.models import (
 
 
 # ---------------------------------------------------------------------------
-# Alias lookup builder
+# Alias lookup builders
 # ---------------------------------------------------------------------------
 
 def _build_alias_lookup(resolved_tables: list[dict]) -> dict:
     """
-    Build an alias lookup from resolved_tables entries.
+    Build the composite alias lookup from resolved_tables entries.
 
     For non-self-join tables (no "role" key):
         key = (table_name, None)  -> alias
 
-    For self-join tables ("role" key present):
+    For hierarchy tables ("role" key present):
         key = (table_name, role)  -> alias
 
     Using (table, role) as the composite key handles both cases uniformly.
-    Non-self-join entries always have role=None so their key is (table, None).
+    Entries without a role always key as (table, None).
 
     Example result:
         {
-            ("Major.Customer", None):   "c",
+            ("Major.Customer", None):      "c",
             ("Major.Acc",      "top_Acc"): "a_top",
             ("Major.Acc",      "sub_Acc"): "a_sub",
         }
@@ -72,9 +91,39 @@ def _build_alias_lookup(resolved_tables: list[dict]) -> dict:
     lookup: dict = {}
     for entry in resolved_tables:
         table_name = entry.get("table", "")
-        role = entry.get("role")        # None for non-self-join tables
+        role = entry.get("role")        # None when not stamped
         alias = entry.get("alias", "")
         lookup[(table_name, role)] = alias
+    return lookup
+
+
+def _build_single_instance_lookup(resolved_tables: list[dict]) -> dict:
+    """
+    Build a {table_name -> alias} lookup for SINGLE-INSTANCE tables only [V1].
+
+    A single-instance table appears exactly once in resolved_tables, so there
+    is only one possible alias for it. This lookup is the fallback used when the
+    composite (table, role) lookup misses for such a table — typically because
+    the LLM dropped the hierarchy word from a column/filter source, leaving its
+    role=None while the table entry carries a role.
+
+    Tables appearing more than once (self-joins) are deliberately EXCLUDED — for
+    them the alias is genuinely ambiguous and must be resolved by role, never by
+    a name-only fallback.
+
+    Example result (Acc appears once with role top_Acc):
+        { "Major.Acc": "a_top", "Major.Customer": "c" }
+    """
+    counts: dict[str, int] = {}
+    for entry in resolved_tables:
+        t = entry.get("table", "")
+        counts[t] = counts.get(t, 0) + 1
+
+    lookup: dict[str, str] = {}
+    for entry in resolved_tables:
+        table_name = entry.get("table", "")
+        if counts.get(table_name, 0) == 1:
+            lookup[table_name] = entry.get("alias", "")
     return lookup
 
 
@@ -85,38 +134,45 @@ def _build_alias_lookup(resolved_tables: list[dict]) -> dict:
 def _build_resolved_columns(
     resolved_columns: list[dict],
     alias_lookup: dict,
+    single_instance_lookup: dict,
     self_join_tables: set[str],
-) -> list[ResolvedColumn]:
+) -> tuple[list[ResolvedColumn], list[str]]:
     """
     Translate resolved_columns dicts into ResolvedColumn models.
 
-    For each column entry:
-      1. Determine the role: entry.get("role") — stamped by join_resolver V1
-         for self-join tables; absent (None) for non-self-join tables.
-      2. Look up alias via (table_name, role).
-      3. If lookup fails for a self-join table (role is None but table is
-         self-join) — raise StructuredQueryBuildError. Caller logs before raising.
+    Resolution order for each column:
+      1. If the table is a self-join table AND role is None — raise
+         StructuredQueryBuildError (genuine ambiguity, cannot guess instance).
+      2. Try the composite (table_name, role) lookup.
+      3. [V1] If that misses AND the table is single-instance, fall back to the
+         single-instance lookup (the one alias for that table) and record a
+         warning string.
       4. output_alias defaults to column_name (Phase 1).
 
+    Pure function (Option Y): returns (columns, warnings). The caller appends the
+    warnings to context.warnings — this function never touches context.
+
     Args:
-        resolved_columns:  List of column dicts from QueryContext.
-        alias_lookup:      {(table_name, role) -> alias} dict.
-        self_join_tables:  Set of table names that appear more than once.
+        resolved_columns:        List of column dicts from QueryContext.
+        alias_lookup:            {(table_name, role) -> alias} composite lookup.
+        single_instance_lookup:  {table_name -> alias} for single-instance tables.
+        self_join_tables:        Set of table names appearing more than once.
 
     Returns:
-        List of ResolvedColumn models in original order.
+        (list of ResolvedColumn in original order, list of warning strings)
 
     Raises:
         StructuredQueryBuildError: Column on a self-join table has role=None.
     """
     columns: list[ResolvedColumn] = []
+    warnings: list[str] = []
 
     for entry in resolved_columns:
         table_name = entry.get("table", "")
         column_name = entry.get("column", "")
-        role = entry.get("role")  # None for non-self-join; role string for self-join
+        role = entry.get("role")  # None for non-hierarchy / unmatched source
 
-        # Detect ambiguous self-join: table is self-join but role could not be assigned
+        # 1. Ambiguous self-join — cannot guess which instance
         if table_name in self_join_tables and role is None:
             raise StructuredQueryBuildError(
                 message=(
@@ -128,7 +184,17 @@ def _build_resolved_columns(
                 )
             )
 
+        # 2. Exact composite lookup
         alias = alias_lookup.get((table_name, role), "")
+
+        # 3. Single-instance fallback [V1]
+        if not alias and table_name in single_instance_lookup:
+            alias = single_instance_lookup[table_name]
+            warnings.append(
+                f"Column '{table_name}.{column_name}' (source "
+                f"'{entry.get('source', '')}') had no hierarchy role; resolved "
+                f"to the single instance of '{table_name}' (alias '{alias}')."
+            )
 
         columns.append(ResolvedColumn(
             table_alias=alias,
@@ -136,7 +202,7 @@ def _build_resolved_columns(
             output_alias=column_name,   # Phase 1: always same as column name
         ))
 
-    return columns
+    return columns, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -146,27 +212,33 @@ def _build_resolved_columns(
 def _build_resolved_filters(
     resolved_filters: list[dict],
     alias_lookup: dict,
+    single_instance_lookup: dict,
     self_join_tables: set[str],
-) -> list[ResolvedFilter]:
+) -> tuple[list[ResolvedFilter], list[str]]:
     """
     Translate resolved_filters dicts into ResolvedFilter models.
 
-    Same alias resolution logic as columns:
-      - (table_name, role) lookup for exact match.
-      - StructuredQueryBuildError if self-join table has role=None.
+    Same alias resolution order as columns:
+      1. Self-join table + role None -> StructuredQueryBuildError.
+      2. Composite (table_name, role) lookup.
+      3. [V1] Single-instance fallback + warning.
+
+    Pure function (Option Y): returns (filters, warnings).
 
     Args:
-        resolved_filters:  List of filter dicts from QueryContext.
-        alias_lookup:      {(table_name, role) -> alias} dict.
-        self_join_tables:  Set of table names that appear more than once.
+        resolved_filters:        List of filter dicts from QueryContext.
+        alias_lookup:            {(table_name, role) -> alias} composite lookup.
+        single_instance_lookup:  {table_name -> alias} for single-instance tables.
+        self_join_tables:        Set of table names appearing more than once.
 
     Returns:
-        List of ResolvedFilter models in original order.
+        (list of ResolvedFilter in original order, list of warning strings)
 
     Raises:
         StructuredQueryBuildError: Filter on a self-join table has role=None.
     """
     filters: list[ResolvedFilter] = []
+    warnings: list[str] = []
 
     for entry in resolved_filters:
         table_name = entry.get("table", "")
@@ -186,6 +258,14 @@ def _build_resolved_filters(
 
         alias = alias_lookup.get((table_name, role), "")
 
+        if not alias and table_name in single_instance_lookup:
+            alias = single_instance_lookup[table_name]
+            warnings.append(
+                f"Filter '{table_name}.{column_name}' (source "
+                f"'{entry.get('source', '')}') had no hierarchy role; resolved "
+                f"to the single instance of '{table_name}' (alias '{alias}')."
+            )
+
         filters.append(ResolvedFilter(
             table_alias=alias,
             column_name=column_name,
@@ -193,7 +273,7 @@ def _build_resolved_filters(
             value=entry.get("value", ""),
         ))
 
-    return filters
+    return filters, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +352,7 @@ def run_structured_query_builder(
 
     Writes (on success):
         context.structured_query  -- populated StructuredQuery model
+        context.warnings          -- appended with any single-instance fallback notes [V1]
         context.status = "success"
         STRUCTURED_QUERY_BUILT log emitted
 
@@ -305,21 +386,25 @@ def run_structured_query_builder(
     }
 
     # ------------------------------------------------------------------
-    # Build alias lookup: (table_name, role) -> alias
+    # Build alias lookups
+    #   composite:        (table_name, role) -> alias  (all tables)
+    #   single_instance:  table_name -> alias          (count == 1 only) [V1]
     # ------------------------------------------------------------------
     alias_lookup = _build_alias_lookup(context.resolved_tables)
+    single_instance_lookup = _build_single_instance_lookup(context.resolved_tables)
 
     # ------------------------------------------------------------------
-    # Translate each section — errors logged before raising
+    # Translate each section — errors logged before raising.
+    # Helpers are pure (Option Y): they return (models, warnings).
     # ------------------------------------------------------------------
     try:
         tables = _build_resolved_tables(context.resolved_tables)
-        columns = _build_resolved_columns(
-            context.resolved_columns, alias_lookup, self_join_tables
+        columns, column_warnings = _build_resolved_columns(
+            context.resolved_columns, alias_lookup, single_instance_lookup, self_join_tables
         )
         joins = _build_resolved_joins(context.resolved_joins)
-        filters = _build_resolved_filters(
-            context.resolved_filters, alias_lookup, self_join_tables
+        filters, filter_warnings = _build_resolved_filters(
+            context.resolved_filters, alias_lookup, single_instance_lookup, self_join_tables
         )
     except StructuredQueryBuildError as exc:
         # Log the error to the file before re-raising
@@ -341,6 +426,12 @@ def run_structured_query_builder(
             )
         )
         raise
+
+    # ------------------------------------------------------------------
+    # Append any single-instance fallback warnings to context [V1]
+    # ------------------------------------------------------------------
+    context.warnings.extend(column_warnings)
+    context.warnings.extend(filter_warnings)
 
     # ------------------------------------------------------------------
     # Read top_rows from llm_output["limit"]
@@ -389,6 +480,7 @@ def run_structured_query_builder(
                 "join_count": len(joins),
                 "filter_count": len(filters),
                 "rule_count": len(structured_query.applied_rules),
+                "fallback_warnings": len(column_warnings) + len(filter_warnings),
             },
         )
     )

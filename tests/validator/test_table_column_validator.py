@@ -31,7 +31,7 @@ from src.validator.table_column_validator import run_table_column_validator
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_context(tables: list[dict], columns: list[dict]) -> QueryContext:
+def make_context(tables: list[dict], columns: list[dict], filters: list[dict] = None) -> QueryContext:
     """
     Build a QueryContext with llm_output populated for the given tables + columns.
     app_id points to the real ABC_app schema loaded in the fixture.
@@ -44,7 +44,7 @@ def make_context(tables: list[dict], columns: list[dict]) -> QueryContext:
         llm_output={
             "tables": tables,
             "columns": columns,
-            "filters": [],
+            "filters": filters or [],
             "limit": None,
             "aggregation": None,
             "sort": [],
@@ -416,3 +416,106 @@ class TestStageOrderingAndLogging:
         result = run_table_column_validator(context, abc_schema_repo, test_logger)
 
         assert result.status == "success"
+
+
+# ---------------------------------------------------------------------------
+# Group F — Filter validation & pass-through  [Story 5.9, Bug #15]
+# ---------------------------------------------------------------------------
+# The validator must validate user filters (same rules as columns) and copy them
+# into context.resolved_filters. Before V2 this never happened — filters were
+# silently lost and never reached the WHERE clause.
+
+class TestFilterValidation:
+
+    def test_f1_valid_filter_passes_through(self, abc_schema_repo, capturing_logger):
+        """F1: A valid filter (Customer.CustomerCID = ASA) lands in resolved_filters."""
+        tables = [{"table": "Major.Customer", "source": "customer"}]
+        columns = [{"table": "Major.Customer", "column": "CustomerCID", "source": "customer id"}]
+        filters = [{
+            "table": "Major.Customer", "column": "CustomerCID",
+            "operator": "=", "value": "ASA", "source": "customer ASA",
+        }]
+        context = make_context(tables=tables, columns=columns, filters=filters)
+
+        result = run_table_column_validator(context, abc_schema_repo, capturing_logger)
+
+        assert len(result.resolved_filters) == 1
+        f = result.resolved_filters[0]
+        assert f["table"] == "Major.Customer"
+        assert f["column"] == "CustomerCID"
+        assert f["value"] == "ASA"
+
+    def test_f2_filter_table_not_in_proposed_raises(self, abc_schema_repo, capturing_logger):
+        """F2: Filter references a table not in proposed tables → NoRelevantColumnsError."""
+        tables = [{"table": "Major.Customer", "source": "customer"}]
+        columns = [{"table": "Major.Customer", "column": "CustomerCID", "source": "id"}]
+        # Filter points at Major.Acc, which is NOT in proposed tables
+        filters = [{
+            "table": "Major.Acc", "column": "AccName",
+            "operator": "=", "value": "X", "source": "acc X",
+        }]
+        context = make_context(tables=tables, columns=columns, filters=filters)
+
+        with pytest.raises(NoRelevantColumnsError) as exc_info:
+            run_table_column_validator(context, abc_schema_repo, capturing_logger)
+        assert "Major.Acc" in exc_info.value.message
+
+    def test_f3_filter_column_not_on_table_raises(self, abc_schema_repo, capturing_logger):
+        """F3: Filter references a column that doesn't exist on its table → error."""
+        tables = [{"table": "Major.Customer", "source": "customer"}]
+        columns = [{"table": "Major.Customer", "column": "CustomerCID", "source": "id"}]
+        filters = [{
+            "table": "Major.Customer", "column": "NonExistentColumn",
+            "operator": "=", "value": "X", "source": "whatever",
+        }]
+        context = make_context(tables=tables, columns=columns, filters=filters)
+
+        with pytest.raises(NoRelevantColumnsError) as exc_info:
+            run_table_column_validator(context, abc_schema_repo, capturing_logger)
+        assert "NonExistentColumn" in exc_info.value.message
+
+    def test_f4_no_filters_empty_list(self, abc_schema_repo, capturing_logger):
+        """F4: No filters in llm_output → resolved_filters is empty, no error."""
+        tables = [{"table": "Major.Customer", "source": "customer"}]
+        columns = [{"table": "Major.Customer", "column": "CustomerCID", "source": "id"}]
+        context = make_context(tables=tables, columns=columns)  # filters defaults to []
+
+        result = run_table_column_validator(context, abc_schema_repo, capturing_logger)
+        assert result.resolved_filters == []
+
+    def test_f5_filter_only_table(self, abc_schema_repo, capturing_logger):
+        """F5: A table present in tables + filter but with NO selected column → filter validates."""
+        # Customer is the filter-only table; the selected column comes from Demographics.
+        tables = [
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.CustomerDemographics", "source": "customer name"},
+        ]
+        columns = [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"},
+        ]
+        filters = [{
+            "table": "Major.Customer", "column": "CustomerCID",
+            "operator": "=", "value": "ASA", "source": "customer ASA",
+        }]
+        context = make_context(tables=tables, columns=columns, filters=filters)
+
+        result = run_table_column_validator(context, abc_schema_repo, capturing_logger)
+
+        assert len(result.resolved_filters) == 1
+        assert result.resolved_filters[0]["table"] == "Major.Customer"
+
+    def test_f6_log_includes_resolved_filters(self, abc_schema_repo, capturing_logger):
+        """F6: VALIDATION_RESULT log payload includes resolved_filters."""
+        tables = [{"table": "Major.Customer", "source": "customer"}]
+        columns = [{"table": "Major.Customer", "column": "CustomerCID", "source": "id"}]
+        filters = [{
+            "table": "Major.Customer", "column": "CustomerCID",
+            "operator": "=", "value": "ASA", "source": "customer ASA",
+        }]
+        context = make_context(tables=tables, columns=columns, filters=filters)
+
+        run_table_column_validator(context, abc_schema_repo, capturing_logger)
+
+        entry = capturing_logger.entries[0]
+        assert "resolved_filters" in entry.payload
+        assert len(entry.payload["resolved_filters"]) == 1

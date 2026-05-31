@@ -1,5 +1,8 @@
 # tests/validator/test_join_resolver.py
 # V0 - Initial implementation
+# V2 - Story 5.9: Added class I -- Single-instance hierarchy role stamping (JR-S1 to JR-S4)
+# V3 - Story 5.9 (cont.): Added JR-S5 to JR-S8 -- role stamping on columns/filters
+#      for single-instance hierarchy tables (fixes empty-alias ".AccName" bug)
 # V1 - Story 4.5: Added class H -- Role stamping on columns and filters (H1, H2, H3)
 #
 # Test scenarios:
@@ -417,3 +420,147 @@ class TestRoleStampingOnColumnsAndFilters:
 
         for col in result.resolved_columns:
             assert "role" not in col
+
+# ---------------------------------------------------------------------------
+# I -- Single-instance hierarchy role stamping  [V3 Story 5.9]
+# ---------------------------------------------------------------------------
+
+class TestSingleInstanceHierarchy:
+    """
+    Story 5.9 — single-instance hierarchy tables must have their role stamped
+    even when the table appears only once in resolved_tables (not a self-join).
+
+    Before V3, role was only stamped on self-join tables (count > 1).
+    A query like "give me top acc for customer ASA" has one Major.Acc entry —
+    but rule_applicator needs role=top_Acc to apply AccLevelConfig=0 and
+    ParentAccID IS NULL conditions.
+    """
+
+    def test_JR_S1_single_acc_top_acc_source_gets_role(self, abc_schema_repo, capturing_logger):
+        """JR-S1: Single Major.Acc with source 'top acc' → role=top_Acc stamped."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "top acc"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        acc_entries = [e for e in result.resolved_tables if e["table"] == "Major.Acc"]
+        assert len(acc_entries) == 1
+        assert acc_entries[0].get("role") == "top_Acc"
+
+    def test_JR_S2_single_acc_sub_acc_source_gets_role(self, abc_schema_repo, capturing_logger):
+        """JR-S2: Single Major.Acc with source 'sub acc' → role=sub_Acc stamped."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "sub acc"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        acc_entries = [e for e in result.resolved_tables if e["table"] == "Major.Acc"]
+        assert len(acc_entries) == 1
+        assert acc_entries[0].get("role") == "sub_Acc"
+
+    def test_JR_S3_single_acc_unmatched_source_warns_no_role(self, abc_schema_repo, capturing_logger):
+        """JR-S3: Single Major.Acc with source 'acc' → no role, warning in context.warnings."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "acc"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        acc_entries = [e for e in result.resolved_tables if e["table"] == "Major.Acc"]
+        assert len(acc_entries) == 1
+        # No role stamped — "acc" matches no specific level synonym
+        assert acc_entries[0].get("role") is None
+        # Warning must be present
+        assert any("matched no hierarchy synonym" in w for w in result.warnings)
+
+    def test_JR_S4_self_join_still_stamps_roles_regression(self, abc_schema_repo, capturing_logger):
+        """JR-S4: Regression — self-join (top acc + sub acc) still stamps roles correctly."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "top acc"},
+            {"table": "Major.Acc", "source": "sub acc"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        acc_entries = [e for e in result.resolved_tables if e["table"] == "Major.Acc"]
+        assert len(acc_entries) == 2
+        roles = {e.get("role") for e in acc_entries}
+        assert "top_Acc" in roles
+        assert "sub_Acc" in roles
+
+    # -----------------------------------------------------------------------
+    # JR-S5 to JR-S8  [Story 5.9 cont.] — role stamping on columns/filters
+    # for single-instance hierarchy tables (the empty-alias ".AccName" bug)
+    # -----------------------------------------------------------------------
+
+    def test_JR_S5_single_acc_column_gets_role_stamped(self, abc_schema_repo, capturing_logger):
+        """JR-S5: Single Major.Acc 'top acc' + a column on it → column gets role=top_Acc."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "top acc"},
+        ])
+        # Column on the single-instance hierarchy table
+        ctx.resolved_columns = [
+            {"table": "Major.Acc", "column": "AccName", "source": "top acc name"},
+        ]
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        col = result.resolved_columns[0]
+        assert col.get("role") == "top_Acc"
+
+    def test_JR_S6_single_acc_filter_gets_role_stamped(self, abc_schema_repo, capturing_logger):
+        """JR-S6: Single Major.Acc 'sub acc' + a filter on it → filter gets role=sub_Acc."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "sub acc"},
+        ])
+        ctx.resolved_filters = [
+            {"table": "Major.Acc", "column": "AccName", "operator": "=",
+             "value": "X", "source": "sub acc named X"},
+        ]
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        filt = result.resolved_filters[0]
+        assert filt.get("role") == "sub_Acc"
+
+    def test_JR_S7_non_hierarchy_column_not_stamped(self, abc_schema_repo, capturing_logger):
+        """JR-S7: Column on a single non-hierarchy table → no role stamped (regression guard)."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "top acc"},
+        ])
+        # Column on Major.Customer — not a hierarchy table
+        ctx.resolved_columns = [
+            {"table": "Major.Customer", "column": "CustomerCID", "source": "customer"},
+        ]
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        col = result.resolved_columns[0]
+        # Non-hierarchy table column must NOT get a role key (left untouched)
+        assert col.get("role") is None
+
+    def test_JR_S8_single_acc_column_unmatched_source_role_none(self, abc_schema_repo, capturing_logger):
+        """JR-S8: Single Acc column whose source matches no synonym → role None, no crash."""
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc", "source": "top acc"},
+        ])
+        # Column source "acc name" matches no specific level synonym
+        ctx.resolved_columns = [
+            {"table": "Major.Acc", "column": "AccName", "source": "acc name"},
+        ]
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        col = result.resolved_columns[0]
+        # role key is present (stamped) but None — consistent with table-level behaviour
+        assert col.get("role") is None

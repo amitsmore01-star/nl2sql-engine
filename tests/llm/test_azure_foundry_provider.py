@@ -59,6 +59,7 @@ def _make_settings(
         timeout_seconds = 30
         retry_max = 3
         retry_backoff_seconds = 2
+        temperature = 0.0
 
     class _FakeSettings:
         llm = _LLM()
@@ -204,6 +205,7 @@ class TestAzureFoundryProvider:
         settings = _make_settings()
         settings.llm.retry_max = 3
         settings.llm.retry_backoff_seconds = 0  # no sleep in tests
+        
 
         respx.post(_TEST_URL).mock(
             side_effect=httpx.TimeoutException("timed out")

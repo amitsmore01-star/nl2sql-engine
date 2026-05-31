@@ -1,15 +1,7 @@
 # src/llm/openai_provider.py
 # V0 - Initial implementation
-#
-# OpenAIProvider — calls the OpenAI Chat Completions API (GPT-4o-mini).
-#
-# Design:
-#   - Implements LLMProvider ABC — complete() and provider_name().
-#   - Synchronous — uses httpx.Client (blocking). No async.
-#   - Retry loop with exponential backoff on HTTP errors and timeouts.
-#   - All config (timeout, retry_max, backoff) read from settings — zero hardcoding.
-#   - Raises ValueError at construction if OPENAI_API_KEY is missing.
-#   - Raises LLMOutputParseError if all retries are exhausted.
+# V1 - Story 5.9: Read settings.llm.temperature at construction and pass it
+#      in the request body. temperature=0 ensures deterministic SQL output.
 
 import time
 
@@ -19,7 +11,6 @@ from src.llm.base import LLMProvider
 from src.core.exceptions import LLMOutputParseError
 from src.config.settings import Settings
 
-# OpenAI Chat Completions endpoint — never hardcoded in pipeline logic
 _OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 _MODEL = "gpt-4o-mini"
 
@@ -32,11 +23,12 @@ class OpenAIProvider(LLMProvider):
 
     Args:
         settings: Loaded Settings object. Reads:
-                    settings.openai_api_key        — OPENAI_API_KEY from .env
-                    settings.llm.timeout_seconds   — per-call timeout
-                    settings.llm.retry_max         — max attempts
-                    settings.llm.retry_backoff_seconds — base backoff (exponential)
-                    settings.llm.max_tokens        — max tokens in response
+                    settings.openai_api_key            — OPENAI_API_KEY from .env
+                    settings.llm.timeout_seconds        — per-call timeout
+                    settings.llm.retry_max              — max attempts
+                    settings.llm.retry_backoff_seconds  — base backoff (exponential)
+                    settings.llm.max_tokens             — max tokens in response
+                    settings.llm.temperature            — sampling temperature (default 0)
 
     Raises:
         ValueError: At construction if openai_api_key is missing or empty.
@@ -53,6 +45,7 @@ class OpenAIProvider(LLMProvider):
         self._retry_max = settings.llm.retry_max
         self._retry_backoff = settings.llm.retry_backoff_seconds
         self._max_tokens = settings.llm.max_tokens
+        self._temperature = settings.llm.temperature
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         """
@@ -62,13 +55,8 @@ class OpenAIProvider(LLMProvider):
           - httpx.TimeoutException  (request timed out)
           - httpx.HTTPStatusError   (4xx/5xx response)
 
-        Args:
-            system_prompt: Sets the LLM role and output format instructions.
-            user_prompt:   The actual query or data for the LLM to process.
-
         Returns:
             Raw text content from the LLM response. Typically JSON.
-            Parsing is the caller's responsibility.
 
         Raises:
             LLMOutputParseError: If all retry attempts fail.
@@ -90,16 +78,7 @@ class OpenAIProvider(LLMProvider):
         )
 
     def _call(self, system_prompt: str, user_prompt: str) -> str:
-        """
-        Make a single HTTP call to the OpenAI API.
-
-        Separated from complete() so tests can target the HTTP layer directly
-        and the retry loop in complete() stays clean.
-
-        Raises:
-            httpx.TimeoutException: If the request exceeds timeout_seconds.
-            httpx.HTTPStatusError:  If the API returns a 4xx or 5xx status.
-        """
+        """Make a single HTTP call to the OpenAI API."""
         with httpx.Client(timeout=self._timeout) as client:
             response = client.post(
                 url=_OPENAI_API_URL,
@@ -110,6 +89,7 @@ class OpenAIProvider(LLMProvider):
                 json={
                     "model": _MODEL,
                     "max_tokens": self._max_tokens,
+                    "temperature": self._temperature,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_prompt},
@@ -120,5 +100,4 @@ class OpenAIProvider(LLMProvider):
             return response.json()["choices"][0]["message"]["content"]
 
     def provider_name(self) -> str:
-        """Return the provider identifier string."""
         return "openai"

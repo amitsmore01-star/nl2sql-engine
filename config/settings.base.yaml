@@ -4,6 +4,8 @@
 #      0 means no limit applied — SQL Builder omits TOP clause, API skips length check
 # V2 - Updated in Story 3.6: removed step1_token_target + step2_token_target (old two-call design)
 #      Added nl_to_ir_strategy and prompt_example_set (single-call strategy, architecture v1.6)
+# V3 - Story 5.9: Added temperature: 0 under llm: section.
+#      temperature=0 forces deterministic LLM output — same query always produces same SQL.
 #
 # Shared config — all environments
 # All keys must be declared here. Dev/prod may override values but never introduce new keys.
@@ -19,12 +21,13 @@ api:
 
 llm:
   provider: mock
-  max_tokens: 1000
+  max_tokens: 4500
   timeout_seconds: 30
   retry_max: 3
   retry_backoff_seconds: 2
   nl_to_ir_strategy: single_call
   prompt_example_set: default
+  temperature: 0               # 0 = fully deterministic output. Range: 0.0–2.0 (OpenAI/Azure), 0.0–1.0 (Anthropic)
 
 sql:
   default_top_rows: 0        # 0 = omit TOP clause entirely. Any positive number = SELECT TOP {n}

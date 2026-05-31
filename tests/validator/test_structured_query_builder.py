@@ -1,5 +1,6 @@
 # tests/validator/test_structured_query_builder.py
 # V0 - Initial implementation
+# V1 - Story 5.9 (Bug #12): Added class E -- TestSingleInstanceFallback (SB-1 to SB-5)
 #
 # Test scenarios:
 #
@@ -361,3 +362,127 @@ class TestContextAndLogging:
         assert entry.stage == "STRUCTURED_QUERY_BUILT"
         assert entry.payload["status"] == "failed"
         assert entry.payload["error_code"] == "STRUCTURED_QUERY_BUILD_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# E -- Single-instance hierarchy fallback  [Story 5.9, Bug #12]
+# ---------------------------------------------------------------------------
+# When a hierarchy table appears ONCE, a column/filter whose role is None must
+# still resolve to that table's single alias (no ambiguity). Self-join tables
+# are unaffected — role=None there still raises StructuredQueryBuildError.
+# Helpers return warnings (Option Y); the builder appends them to context.warnings.
+
+class TestSingleInstanceFallback:
+
+    def test_SB1_single_instance_column_with_role_resolves(self, capturing_logger):
+        """SB-1: Single-instance Acc, column WITH role stamped -> resolves to a_top (regression)."""
+        ctx = _make_context(
+            tables=[
+                {"table": "Major.Customer", "source": "customer", "alias": "c"},
+                {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"},
+            ],
+            columns=[
+                {"table": "Major.Acc", "column": "AccName", "source": "top acc name", "role": "top_Acc"},
+            ],
+            joins=[{
+                "join_type": "INNER JOIN",
+                "table_name": "Major.Customer",
+                "alias": "c",
+                "on_conditions": [{"left": "a_top.CustomerID", "right": "c.CustomerID"}],
+            }],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        col = next(c for c in sq.columns if c.column_name == "AccName")
+        assert col.table_alias == "a_top"
+        # No fallback fired -> no warnings
+        assert result.warnings == []
+
+    def test_SB2_single_instance_column_role_none_falls_back(self, capturing_logger):
+        """SB-2: Single-instance Acc, column role=None -> falls back to a_top, warning logged."""
+        ctx = _make_context(
+            tables=[
+                {"table": "Major.Customer", "source": "customer", "alias": "c"},
+                {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"},
+            ],
+            columns=[
+                {"table": "Major.Acc", "column": "AccName", "source": "top acc name", "role": "top_Acc"},
+                # LLM dropped the hierarchy word -> role None
+                {"table": "Major.Acc", "column": "AccID", "source": "accid", "role": None},
+            ],
+            joins=[{
+                "join_type": "INNER JOIN",
+                "table_name": "Major.Customer",
+                "alias": "c",
+                "on_conditions": [{"left": "a_top.CustomerID", "right": "c.CustomerID"}],
+            }],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        acc_id_col = next(c for c in sq.columns if c.column_name == "AccID")
+        # Fallback resolved the empty alias to the one Acc instance
+        assert acc_id_col.table_alias == "a_top"
+        # Warning recorded for the fallback
+        assert any("AccID" in w and "single instance" in w for w in result.warnings)
+
+    def test_SB3_single_instance_filter_role_none_falls_back(self, capturing_logger):
+        """SB-3: Single-instance Acc, filter role=None -> falls back to a_top, warning logged."""
+        ctx = _make_context(
+            tables=[
+                {"table": "Major.Customer", "source": "customer", "alias": "c"},
+                {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"},
+            ],
+            columns=[
+                {"table": "Major.Acc", "column": "AccName", "source": "top acc name", "role": "top_Acc"},
+            ],
+            filters=[
+                # vague source -> role None, but only one Acc instance exists
+                {"table": "Major.Acc", "column": "AccKey", "operator": "=", "value": "K1",
+                 "source": "acc K1", "role": None},
+            ],
+            joins=[{
+                "join_type": "INNER JOIN",
+                "table_name": "Major.Customer",
+                "alias": "c",
+                "on_conditions": [{"left": "a_top.CustomerID", "right": "c.CustomerID"}],
+            }],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        assert len(sq.filters) == 1
+        assert sq.filters[0].table_alias == "a_top"
+        assert sq.filters[0].column_name == "AccKey"
+        assert any("AccKey" in w and "single instance" in w for w in result.warnings)
+
+    def test_SB4_self_join_role_none_still_raises(self, capturing_logger):
+        """SB-4: Self-join Acc, column role=None -> still raises (fallback must NOT apply)."""
+        ctx = _make_context(
+            tables=[
+                {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"},
+                {"table": "Major.Acc", "source": "sub acc", "alias": "a_sub", "role": "sub_Acc"},
+            ],
+            columns=[
+                {"table": "Major.Acc", "column": "AccName", "source": "account name", "role": None},
+            ],
+        )
+        with pytest.raises(StructuredQueryBuildError) as exc_info:
+            run_structured_query_builder(ctx, capturing_logger)
+
+        assert exc_info.value.code == "STRUCTURED_QUERY_BUILD_ERROR"
+        assert "Major.Acc" in exc_info.value.message
+
+    def test_SB5_non_hierarchy_single_table_resolves_normally(self, capturing_logger):
+        """SB-5: Single non-hierarchy table column resolves via (table, None) — no fallback needed."""
+        ctx = _make_context(
+            tables=[{"table": "Major.Customer", "source": "customer", "alias": "c"}],
+            columns=[{"table": "Major.Customer", "column": "CustomerCID", "source": "customer id"}],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        assert sq.columns[0].table_alias == "c"
+        # (Major.Customer, None) hit the composite lookup directly -> no fallback warning
+        assert result.warnings == []

@@ -34,6 +34,7 @@
 - 5.6 ✅ App Identifier Tool Endpoint (all tests passing)
 - 5.7 ✅ Full Pipeline Tool Endpoint (tools/query)
 - 5.8 ✅ Golden E2E Test (all tests passing — Part A exact match, Part B data-driven, Diagnostic)
+- 5.9 ✅ Tech Debt Closure + Hierarchy/Filter Fixes — COMPLETE
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -46,10 +47,12 @@ Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 Sprint 5 — SQL Builder 
 
 ## Current Story
-Story 5.8 — Golden E2E Test ✅ COMPLETE
+Story 5.9 — Tech Debt Closure + Hierarchy/Filter Fixes ✅ COMPLETE
 
 ## Next Story
-5.9 — LLM Matching Robustness & Schema Vocabulary
+Story 5.10 (TBD) — confirm from architecture doc before starting.
+NOTE: A dedicated LLM-reliability story is queued (see "Future Story — LLM Reliability" below).
+Decide whether it runs as the last Phase 1 story or moves to Phase 2.
 
 
 ## Files Built So Far
@@ -68,6 +71,8 @@ Story 5.8 — Golden E2E Test ✅ COMPLETE
                                     ← V2. Removed step1_token_target + step2_token_target.
                                       Added nl_to_ir_strategy: single_call and
                                       prompt_example_set: default under llm: section.
+                                    ← V3 (Story 5.9). Added llm.temperature: 0 (deterministic output).
+
 - config/settings.dev.yaml
 - config/settings.prod.yaml
 - config/prompts.yaml               ← NEW V0. Sectioned prompt definitions.Three examples: hierarchy_with_filter,
@@ -75,6 +80,9 @@ Story 5.8 — Golden E2E Test ✅ COMPLETE
                                       user_template contains <SCHEMA_SUMMARY> + <USER_QUERY>.
                                      ← TO UPDATE. Add strict synonym matching rule to rules.tables section. Add strict_synonym_matching
                                       example. Add to default example_set.
+                                    ← V1 (Story 5.9). Added negative_strict_synonym example ("topaccount" must NOT
+                                      match "top acc"). Added fused-word prohibition to rules.tables. Added the example
+                                      to both default and minimal example_sets.
 - config/mock_responses.json        ← NEW V0. Mock LLM responses for JSON mode.
                                       Each entry has user_input (exact match string) and llm_response (IR JSON string). First entry:
                                       "give me topaccount name for customer ASA".
@@ -97,6 +105,7 @@ Story 5.8 — Golden E2E Test ✅ COMPLETE
                                        azure_foundry_api_key, azure_foundry_deployment_name
                                        Optional fields. Injected via _optional_llm_secrets
                                        list in load_settings().
+                                    ← V4 (Story 5.9). Added temperature: float = 0.0 to LLMSettings.
 
 - src/config/prompts_models.py      ← NEW V0/V1. Pydantic models for prompts.yaml structure.
                                       PromptExample, PromptRules, StrategyPromptSpec,
@@ -287,11 +296,19 @@ src/validator/join_resolver.py            ← NEW V0. run_join_resolver(context,
                                             Tech debt comments added on raise sites
                                           ← V2 (Story 5.8). Fixed duplicate join condition in self-join additional conditions.  
                                             Forward + reverse relationship lookups both ran unconditionally, adding c.CustomerID = a_sub.CustomerID twice. Reverse lookup now runs only as fallback (if/else) when no forward relationship exists.
+                                          ← V3 (Story 5.9, Bug #7). Stamps hierarchy role on single-instance hierarchy tables (not just self-join); warns when source matches no level.
+                                          ← V4 (Story 5.9, Bug #12). Stamps role on columns/filters for single-instance hierarchy tables too (not just self-join).
+                                          ← V5 (Story 5.9, Bug #13/DD-4). Extracted _match_hierarchy_role + _table_has_hierarchy into shared synonym_matching module; imports them now (pure refactor, no behaviour change).
 src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(context, schema_repo, logger). 
                                             Applies active_record, versioning, hierarchy conditions with alias prefix. Suppress token check. Deduplication. Emits VALIDATION_RESULT log.
 src/validator/structured_query_builder.py       ← V0. Translates enriched QueryContext dicts into typed StructuredQuery model. 
                                                   Logs error before raising on self-join alias ambiguity
-
+                                                 ← V1 (Story 5.9, Bug #12). Single-instance alias fallback: when a column/filter (table, role) lookup misses on a single-instance table, resolves to that table's one alias + records a warning. Self-join tables still raise StructuredQueryBuildError on role=None.
+src/validator/synonym_matching.py         ← NEW V0 (Story 5.9, Bug #13/DD-4). Single source of truth for source→synonym matching.
+                                            Three pure functions: match_table_reference, match_hierarchy_role, table_has_hierarchy.
+                                            Whole-word, case-insensitive. Used by join_resolver and table_column_validator.
+src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(context, schema_repo, logger).
+                                            Applies active_record, versioning, hierarchy conditions with alias prefix. Suppress token check. Deduplication. Emits VALIDATION_RESULT log.
 
 - src/llm/base.py                   ← NEW V0. LLMProvider ABC.
                                       Two abstract methods: complete() and provider_name().
@@ -332,9 +349,11 @@ src/validator/structured_query_builder.py       ← V0. Translates enriched Quer
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
                                       Model: gpt-4o-mini. Retry + exponential backoff.
                                       Raises ValueError at construction if openai_api_key missing.
+                                    ← V1 (Story 5.9, Bug #10). Reads settings.llm.temperature, sends it in request body.
 
 - src/llm/azure_openai_provider.py  ← NEW V0. AzureOpenAIProvider.
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                    ← V1 (Story 5.9, Bug #10). Sends temperature in request body.
 
 - src/llm/azure_foundry_provider.py  ← NEW V0. AzureFoundryProvider.
                                        Implements LLMProvider ABC. Synchronous — httpx.Client.
@@ -343,9 +362,11 @@ src/validator/structured_query_builder.py       ← V0. Translates enriched Quer
                                        3 credentials: AZURE_FOUNDRY_ENDPOINT,
                                        AZURE_FOUNDRY_API_KEY, AZURE_FOUNDRY_DEPLOYMENT_NAME.
                                        No api-version needed.
+                                     ← V1 (Story 5.9, Bug #10). Sends temperature in request body.
 
 - src/llm/anthropic_provider.py     ← NEW V0. AnthropicProvider.
                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                     ← V1 (Story 5.9, Bug #10). Sends temperature in request body.
 
 - src/pipeline/schema_summary.py    ← NEW V0. build_schema_summary(schema: AppSchema) -> str.
                                       Compresses AppSchema into plain-text for LLM prompt.
@@ -483,13 +504,19 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
 - tests/validator/test_table_column_validator.py ← NEW V0. 13 tests:
                                                   A1-A4 table happy path, B1-B3 table failure,
                                                   C1-C3 column happy path, D1-D3 column failure,
-                                                  E1-E3 ordering and logging. 
+                                                  E1-E3 ordering and logging.
+                                                ← V1 (Story 5.9, Bug #13). Added TestPhantomDuplicateTables (P1–P6).
+                                                ← V2 (Story 5.9, Bug #15). Added TestFilterValidation (F1–F6); extended make_context with filters=.
 - tests/validator/test_structured_query_builder.py ← NNW V0 11 scenarios covering happy path, self-join alias resolution, error logging
-- tests/validator/test_join_resolver.py            ← NEW V0. 16 tests: A1 single table, B1-B3 direct joins, C1-C3 self-join hierarchy, D1-D2 junction
+                                                  ← V1 (Story 5.9, Bug #12). Added TestSingleInstanceFallback (SB-1–SB-5).
+- tests/validator/test_join_resolver.py            ← NEW V0. 16 tests.
+                                                  ← V2 (Story 5.9). Added TestSingleInstanceHierarchy (JR-S1–S4).
+                                                   ← V3 (Story 5.9). Added JR-S5–S8 (role stamping on columns/filters for single-instance).
                                                     bridge, E1 no join path, F1-F4 alias generation, G1 logging.
                                                   ← V1 Added class H — 3 scenarios for role stamping on columns and filters
 - tests/validator/test_rule_applicator.py         ← NEW V0. 19 tests: A1-A3 active record, B1-B2 versioning, C1-C3 hierarchy, D1-D3 suppress tokens,
                                                     E1 deduplication, F1 logging, plus TestQualifyCondition unit tests.
+- tests/validator/test_synonym_matching.py  ← NEW V0 (Story 5.9). 8 scenarios: HM-1/2/3 hierarchy role match, HM-4 fused-word miss (documents Bug #14), HM-5 table_has_hierarchy, HM-6/7/8 table-reference matching.
 
 - tests/api/test_models.py                  ← new in 2.3
 - tests/api/test_auth.py                    ← new in 2.4 (A1-A5, B1-B5, C1-C3, D1-D2)
@@ -975,6 +1002,21 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - A2 reads SQL from data["context"]["sql"] (ToolResponse shape); A1 reads from
   data["data"]["sql"] (QueryResponse shape). Same SQL, different envelope per endpoint.
 
+### Key Decisions Made — Story 5.9
+- DD-1: Column-first table derivation — REJECTED. Confirmed against the real IR: the COUNT target table lives ONLY in llm_output.tables (see prompts.yaml aggregation_with_limit example), so deriving tables from columns+filters loses it; also loses filter-only and junction/bridge tables. Evidence-based rejection.
+- DD-2: Aggregation-switch derivation (use LLM list only when aggregation present) — REJECTED. Two code paths, fixes only the COUNT hole, branches on a signal that doesn't predict when the LLM list is needed; collapses into Path A anyway.
+- DD-3: Table source-of-truth = trust the LLM tables list and CLEAN it (Path A). It is the only structure carrying column-tables, filter-only tables, and COUNT-target tables. Permanent design, not a stopgap.
+- DD-4: Matching logic lives in ONE shared module (synonym_matching.py), used by both join_resolver and table_column_validator. So the Phase-2 fused-word upgrade happens in one place and stays generic across app schemas.
+- Filter validation strictness (Bug #15): a filter referencing a column/table not in the proposed set raises NoRelevantColumnsError (same hard-fail as columns).
+- Bug #16 handling: keep loud failure (no silent guessing). Deferred to the LLM-Reliability story.
+
+### Known Issues / Deferred
+- Bug #14 — fused hierarchy words ("subaccount", "topaccount") don't match a role under whole-word matching → DEFERRED to LLM-Reliability story.
+- Bug #16 — LLM omits or misroutes the filter table (drops Major.Customer, or forces the customer filter onto Major.Acc.CustomerID) → causes correct loud failure (Stage 3 reject, or self-join ambiguity guard). DEFERRED to LLM-Reliability story.
+- KI-2 — Bug #13 may silently drop a legitimate fused-word duplicate. Resolved once Bug #14 lands.
+- KI-6 — mitigated: matching logic centralised in synonym_matching.py (single upgrade point).
+
+
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
@@ -1001,6 +1043,17 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
   and c.CustomerID = a_sub.CustomerID was added twice. Fixed: reverse lookup is now
   an else-branch fallback, runs only when forward lookup returns nothing. Surfaced by
   golden E2E test A1/A2 — duplicate AND line in the a_sub INNER JOIN ON clause.
+
+
+### Bug Fixes — Story 5.9
+- Bug #7  — single-instance hierarchy role not stamped on table entry → fixed (join_resolver V3)
+- Bug #8/#9 — strict synonym prompt reinforcement + negative example → fixed (prompts.yaml V1)
+- Bug #10 — temperature not configurable → fixed (settings + 4 providers)
+- Bug #11 — second prompt example → fixed
+- Bug #12 — single-instance hierarchy column/filter alias unresolved (empty ".AccName") → fixed (structured_query_builder V1 single-instance fallback)
+- Bug #13 — phantom DUPLICATE table entries (LLM emits a table twice, second is a column ref like "accKey") → fixed (table_column_validator V1, drop phantom duplicates via shared matcher)
+- Bug #15 — user filters never copied into resolved_filters (silently lost, never reached WHERE) → fixed (table_column_validator V2, Stage 3 filter validation + pass-through)
+
 
 ### Azure AI Foundry Provider (Adhoc added)
 - Static api-key header used — same pattern as all other providers

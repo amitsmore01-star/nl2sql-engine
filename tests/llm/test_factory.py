@@ -58,6 +58,7 @@ def _make_settings(
     llm.timeout_seconds = 30
     llm.retry_max = 3
     llm.retry_backoff_seconds = 2
+    llm.temperature = 0.0
 
     settings = _FakeSettings()
     settings.llm = llm

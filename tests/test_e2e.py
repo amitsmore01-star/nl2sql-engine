@@ -153,7 +153,8 @@ INNER JOIN Major.Acc a_sub
   ON a_top.AccID = a_sub.ParentAccID
   AND c.CustomerID = a_sub.CustomerID
 WHERE
-  c.VersionTermDate         IS NULL
+  c.CustomerCID             = 'ASA'
+  AND c.VersionTermDate         IS NULL
   AND ISNULL(c.DeletedFlag, 0)  = 0
   AND c.VoidedDate              IS NULL
   AND a_top.TermDate            IS NULL
@@ -380,6 +381,7 @@ class TestGoldenExactMatch:
             REQUEST_RECEIVED,
             APP_DETECTED,
             INTENT_GUARD_RESULT,
+            LLM_OUTPUT,
             LLM_OUTPUT,
             VALIDATION_RESULT,   # table/column validator
             VALIDATION_RESULT,   # join resolver

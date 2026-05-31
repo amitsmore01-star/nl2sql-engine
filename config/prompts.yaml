@@ -1,5 +1,9 @@
 # config/prompts.yaml
 # V0 - Initial implementation
+# V1 - Story 5.9: Added negative_strict_synonym example (topaccount -> top acc).
+#      Demonstrates that "topaccount" must NOT match "top acc" or "top Acc"
+#      because "topaccount" is not in the synonym list. Added to default and
+#      minimal example sets. Reinforces strict synonym-only matching rule.
 #
 # Sectioned prompt definitions for NL-to-IR strategies.
 # Loaded at startup by src/config/settings.py.
@@ -60,9 +64,11 @@ nl_to_structured_query:
       - Include every table needed to answer the query — including tables needed only for joins
       - If the same table is needed twice with different roles (e.g. top acc and sub acc), include it twice with different source values
       - Never propose junction tables — they are hidden from you intentionally
-      - Only map a user term to a table if the term exactly matches (case-insensitive) table's display name or one of its listed synonyms. Do not use semantic
-       similarity, common knowledge, or language inference to guess a match — for example, do not map 'clients' to a table whose synonyms are [customer, organization]
-       because they mean the same thing in English. If the user term does not appear in the display name or synonym list — exclude that table entirely and do not guess
+      - Only map a user term to a table if the term exactly matches (case-insensitive) the table's display name or one of its listed synonyms. Do not use semantic
+        similarity, common knowledge, or language inference to guess a match — for example, do not map 'clients' to a table whose synonyms are [customer, organization]
+        because they mean the same thing in English. If the user term does not appear in the display name or synonym list — exclude that table entirely and do not guess.
+        Concatenated or fused forms are NOT synonyms — for example, "topaccount" is not the same as the synonym "top acc" or "top account", even though it looks
+        similar. Only an exact case-insensitive match against the listed synonym counts.
 
     columns:
       - Only propose columns that appear under the table you name in the schema summary
@@ -106,12 +112,49 @@ nl_to_structured_query:
       - filter_only_customer
       - aggregation_with_limit
       - strict_synonym_matching
+      - negative_strict_synonym
 
     minimal:
       - hierarchy_with_filter
       - strict_synonym_matching
+      - negative_strict_synonym
 
   examples:
+
+    negative_strict_synonym:
+      schema: |
+        table: Major.Acc [Acc, top Acc, sub Acc, top account, sub account]
+          AccID
+          AccName [Acc name]
+          CustomerID
+          AccLevelConfig
+          ParentAccID
+      query: "give me topaccount name for customer ASA in ABC"
+      correct: |
+        {
+          "tables": [],
+          "columns": [],
+          "filters": [],
+          "limit": null,
+          "aggregation": null,
+          "sort": []
+        }
+      incorrect: |
+        {
+          "tables": [{"table": "Major.Acc", "source": "topaccount"}],
+          "columns": [{"table": "Major.Acc", "column": "AccName", "source": "topaccount name"}],
+          "filters": [],
+          "limit": null,
+          "aggregation": null,
+          "sort": []
+        }
+      why_wrong: |
+        "topaccount" is a single fused word. The synonym list contains "top Acc",
+        "top account" — each is a two-word phrase with a space. "topaccount" does
+        not match any entry in the synonym list exactly (case-insensitive). Semantic
+        similarity ("topaccount" sounds like "top account") is NOT a valid match.
+        Only exact case-insensitive matches against the display name or synonyms
+        are permitted. Return empty tables when no exact match exists.
 
     strict_synonym_matching:
       schema: |

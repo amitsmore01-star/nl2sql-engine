@@ -4,6 +4,8 @@
 # V2 - Replaced step1_token_target + step2_token_target with nl_to_ir_strategy
 #      and prompt_example_set throughout (Story 3.6, architecture v1.6)
 #      Added Scenario P — prompts.yaml loading tests
+# V3 - Story 5.9: Added TestTemperatureConfig (S1). Updated _write_valid_base
+#      to include temperature: 0 so existing unknown-key tests remain green.
 #
 # Tests for src/config/settings.py
 # All 9 agreed scenarios covered.
@@ -90,10 +92,10 @@ class TestBaseConfigLoads:
         assert settings.sql.max_nl_query_length == 0
 
     def test_llm_max_tokens(self, monkeypatch):
-        """llm.max_tokens is 1000 as declared in base YAML."""
+        """llm.max_tokens is 4500 as declared in base YAML."""
         _set_env(monkeypatch, BASE_ENV)
         settings = load_settings(REAL_CONFIG_DIR)
-        assert settings.llm.max_tokens == 1000
+        assert settings.llm.max_tokens == 4500
 
     def test_llm_retry_max(self, monkeypatch):
         """llm.retry_max is 3 as declared in base YAML."""
@@ -125,7 +127,7 @@ class TestDevOverrides:
         settings = load_settings(REAL_CONFIG_DIR)
         assert settings.sql.default_top_rows == 0
         assert settings.app.name == "nl2sql-engine"
-        assert settings.llm.max_tokens == 1000
+        assert settings.llm.max_tokens == 4500
 
 
 # ===========================================================================
@@ -343,12 +345,13 @@ class TestUnknownKeyInYaml:
             "  prefix: /v1\n"
             "llm:\n"
             "  provider: mock\n"
-            "  max_tokens: 1000\n"
+            "  max_tokens: 4500\n"
             "  timeout_seconds: 30\n"
             "  retry_max: 3\n"
             "  retry_backoff_seconds: 2\n"
             "  nl_to_ir_strategy: single_call\n"
             "  prompt_example_set: default\n"
+            "  temperature: 0\n"
             "sql:\n"
             "  default_top_rows: 0\n"
             "  max_nl_query_length: 0\n"
@@ -512,12 +515,13 @@ class TestPromptsYamlLoading:
             "  prefix: /v1\n"
             "llm:\n"
             "  provider: mock\n"
-            "  max_tokens: 1000\n"
+            "  max_tokens: 4500\n"
             "  timeout_seconds: 30\n"
             "  retry_max: 3\n"
             "  retry_backoff_seconds: 2\n"
             "  nl_to_ir_strategy: single_call\n"
             "  prompt_example_set: default\n"
+            "  temperature: 0\n"
             "sql:\n"
             "  default_top_rows: 0\n"
             "  max_nl_query_length: 0\n"
@@ -538,3 +542,15 @@ class TestPromptsYamlLoading:
 
         with pytest.raises(ValueError, match="prompts.yaml"):
             load_settings(tmp_path)
+
+
+# ===========================================================================
+# Scenario S — Temperature config  [Story 5.9]
+# ===========================================================================
+class TestTemperatureConfig:
+
+    def test_S1_llm_temperature_is_zero_from_base_yaml(self, monkeypatch):
+        """S1 — settings.llm.temperature is 0 after loading the real base config."""
+        _set_env(monkeypatch, BASE_ENV)
+        s = load_settings(REAL_CONFIG_DIR)
+        assert s.llm.temperature == 0

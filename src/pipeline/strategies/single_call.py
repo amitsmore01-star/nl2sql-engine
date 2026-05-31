@@ -105,6 +105,20 @@ class SingleCallStrategy(NLToIRStrategy):
             user_query=context.nl_query_original,
         )
 
+        self._logger.log(
+            LogEntry(
+                stage=LLM_OUTPUT,
+                request_id=context.request_id,
+                user_id=context.user_id,
+                app_id=context.app_id,
+                app_schema_version=context.app_schema_version,
+                payload={
+                    "LLM Provider": self._llm_provider.provider_name(),
+                    "system_prompt": self._system_prompt,
+                    "user_prompt":user_prompt
+                },
+            )
+        )
         # Call LLM — synchronous, blocking
         raw_response = self._llm_provider.complete(
             system_prompt=self._system_prompt,
