@@ -38,7 +38,8 @@
 - 6.1 ✅ Feedback Endpoint
 - 6.3 ✅ Apps Endpoint
 - 6.4 ✅ API Response Consistency
-- 6.5 ✅ Foundry Tool Integration Tests 
+- 6.5 ✅ Foundry Tool Integration Tests
+- 6.6 ✅ Full API Integration Test
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -48,10 +49,10 @@ Sprint 4 — Schema Mapping & Validation ✅ COMPLETE
 Sprint 5 — SQL Builder ✅ COMPLETE
 
 ## Current Sprint
-Sprint 6 — Feedback, API Completion & Tool Integration Tests
+Sprint 6 — Feedback, API Completion & Tool Integration Tests ✅ COMPLETE
 
 ## Current Story
-Story 6.5 — Foundry Tool Integration Tests ✅ COMPLETE
+Story 6.6 — Full API Integration Test ✅ COMPLETE
 
 ## Next Story
 Story 6.6 — Full API Integration Test
@@ -554,7 +555,14 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                            C2 confirms Story 6.4 fix (400 from
                                            middleware, no missing_fields at top level,
                                            missing_fields now inside errors[0]),
-                                           D1 feedback_tool 501 placeholder stable.                                                                                  
+                                           D1 feedback_tool 501 placeholder stable.
+- tests/api/test_api_integration.py  ← NEW V0 (Story 6.6). 16-test API sweep:
+                                       A1-A2 health endpoints (no auth),B1-B3 user-facing endpoints with CLIENT key
+                                       (query success, feedback, apps),C1-C6 tool endpoints with FOUNDRY key
+                                       (app-identifier, nl-to-ir, validator,sql-builder, tools/query, tools/feedback 501),
+                                       D1-D3 auth key separation (CLIENT rejected on tools, FOUNDRY rejected on user-facing, no key
+                                       → 401 on both), E1-E4 error codes at API response level(APP_NOT_DETERMINED, UNSUPPORTED_INTENT, MISSING_CONTEXT_FIELDS, INTERNAL_ERROR). 
+
 - tests/core/logging/test_log_models.py     ← new in 1.6 (M1-M9)
 - tests/core/logging/test_logger.py         ← new in 1.6 (L1-L17)
 - tests/core/test_models.py                 ← new in 2.1
@@ -1187,6 +1195,17 @@ middleware.py V1 — missing_fields inside errors[0]:
 - No new source files created or modified — Story 6.5 is test-only.
 - No tools-specific conftest needed — tests/api/conftest.py (autouse env vars)
   covers all tests/api/** including tests/api/tools/ via pytest scope rules.
+
+### Full API Integration Test (6.6)
+- Story 6.6 is a sweep test — confirms breadth across the entire API, not
+  depth. Deep testing is handled by endpoint-specific test files.
+- All test key values (test-client-key-12345, test-foundry-key-67890) are
+  mock-only values already present in tests/api/conftest.py — safe for
+  public GitHub. Real secrets live in .env (gitignored) and are never
+  read by the test suite.
+- No source files created or modified — Story 6.6 is test-only.
+- pytest tests/api/ passes as a full suite — test isolation confirmed,
+  no env var leakage between tests.
   
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
