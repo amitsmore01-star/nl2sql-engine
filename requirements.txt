@@ -1,5 +1,6 @@
 fastapi==0.136.1
 uvicorn==0.47.0
+gunicorn==23.0.0
 typer==0.25.1
 pydantic==2.13.4
 pydantic-settings==2.14.1
