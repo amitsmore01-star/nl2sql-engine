@@ -37,7 +37,8 @@
 - 5.9 ✅ Tech Debt Closure + Hierarchy/Filter Fixes 
 - 6.1 ✅ Feedback Endpoint
 - 6.3 ✅ Apps Endpoint
-- 6.4 ✅ API Response Consistency 
+- 6.4 ✅ API Response Consistency
+- 6.5 ✅ Foundry Tool Integration Tests 
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -50,10 +51,10 @@ Sprint 5 — SQL Builder ✅ COMPLETE
 Sprint 6 — Feedback, API Completion & Tool Integration Tests
 
 ## Current Story
-Story 6.4 — API Response Consistency ✅ COMPLETE
+Story 6.5 — Foundry Tool Integration Tests ✅ COMPLETE
 
 ## Next Story
-Story 6.5 — Foundry Tool Integration Tests
+Story 6.6 — Full API Integration Test
 
 
 ## Files Built So Far
@@ -635,6 +636,21 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                       Intent Guard, Success, APP_NOT_DETERMINED). Group D
                                       overrides app.state.llm_provider inside the TestClient
                                       with block after lifespan runs.
+- tests/api/tools/test_tools_integration.py  ← NEW V0 (Story 6.5). 8 integration tests:
+                                               A1 sequential full pipeline
+                                               (app-identifier → nl-to-ir → validator →
+                                               sql-builder, context accumulates at each
+                                               step, final sql contains SELECT),
+                                               B1-B2 hand-crafted llm_output bypasses
+                                               nl-to-ir tool, validator accepts it,
+                                               sql-builder produces SQL,
+                                               C1 out-of-order call (pre-populated
+                                               context sent directly to validator,
+                                               no prior tool endpoint calls),
+                                               D1 mixed workflow (app-identifier tool
+                                               then one-shot tools/query),
+                                               E1-E3 Intent Guard blocks DELETE query
+                                               at app-identifier, nl-to-ir, tools/query.
 
 - tests/llm/test_base.py                    ← NEW V0. 3 tests: A1-A3.
 - tests/llm/test_mock_provider.py           ← NEW V0. 6 tests: B1-B6.
@@ -1133,7 +1149,6 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
   same broken-startup guard pattern.  
 
 ### API Response Consistency Audit (6.4)
-
 Audit results:
 - query.py V2: final QueryResponse shape confirmed, Story 3.7 TODO removed. ✅
 - feedback.py V0: {request_id, status, errors} — correct minimal envelope. ✅
@@ -1160,6 +1175,19 @@ middleware.py V1 — missing_fields inside errors[0]:
   Response shape: {request_id, status,
                    errors: [{code, message, missing_fields: [...]}]}
 
+### Foundry Tool Integration Tests (6.5)
+- A1 is one comprehensive test method with four sequential steps. Error
+  messages include step number so failures are immediately diagnosable.
+- E2 (nl-to-ir Intent Guard test) pre-populates app_id and app_schema_version
+  so ContextValidator passes first — Intent Guard then fires as expected.
+  Without pre-population, validator would return 400 before Intent Guard runs.
+- D1 confirms: when app_id is pre-populated in the context, run_pipeline()
+  inside tools/query uses it correctly — the pipeline does not blindly reset
+  fields that are already set.
+- No new source files created or modified — Story 6.5 is test-only.
+- No tools-specific conftest needed — tests/api/conftest.py (autouse env vars)
+  covers all tests/api/** including tests/api/tools/ via pytest scope rules.
+  
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
