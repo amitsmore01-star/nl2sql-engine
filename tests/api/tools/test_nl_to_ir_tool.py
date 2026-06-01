@@ -177,7 +177,7 @@ class TestContextValidation:
         assert response.status_code == 400
         data = response.json()
         assert data["errors"][0]["code"] == "MISSING_CONTEXT_FIELDS"
-        assert "nl_query_original" in data["missing_fields"]
+        assert "nl_query_original" in data["errors"][0]["missing_fields"]
 
     def test_b2_missing_app_id_returns_400(self):
         """app_id empty string → 400 MISSING_CONTEXT_FIELDS."""
@@ -191,7 +191,7 @@ class TestContextValidation:
         assert response.status_code == 400
         data = response.json()
         assert data["errors"][0]["code"] == "MISSING_CONTEXT_FIELDS"
-        assert "app_id" in data["missing_fields"]
+        assert "app_id" in data ["errors"][0]["missing_fields"]
 
     def test_b3_missing_app_schema_version_returns_400(self):
         """app_schema_version empty string → 400 MISSING_CONTEXT_FIELDS."""
@@ -205,7 +205,7 @@ class TestContextValidation:
         assert response.status_code == 400
         data = response.json()
         assert data["errors"][0]["code"] == "MISSING_CONTEXT_FIELDS"
-        assert "app_schema_version" in data["missing_fields"]
+        assert "app_schema_version" in data["errors"][0]["missing_fields"]
 
     def test_b4_all_three_fields_missing_lists_all_in_error(self):
         """
@@ -225,7 +225,7 @@ class TestContextValidation:
             )
         assert response.status_code == 400
         data = response.json()
-        missing = data["missing_fields"]
+        missing = data ["errors"][0]["missing_fields"]
         assert "nl_query_original" in missing
         assert "app_id" in missing
         assert "app_schema_version" in missing

@@ -4,6 +4,9 @@
 #      SchemaLoadError is an infrastructure error (HTTP 500), not a business
 #      error (HTTP 200). Previously it was swallowed by the NL2SQLBaseError
 #      handler and returned 200 incorrectly.
+# V2 - Story 6.4: Removed route-level MissingContextFieldsError catch.
+#      Now handled by global exception handler (middleware.py → HTTP 400).
+#      Removed unused MISSING_CONTEXT_FIELDS and MissingContextFieldsError imports.
 #
 # Foundry tool endpoint: POST /v1/tools/validator
 #
@@ -38,8 +41,8 @@ from fastapi.responses import JSONResponse
 from src.api.auth import require_foundry_key
 from src.api.models.response import ErrorDetail, ToolResponse
 from src.api.tools.context_validator import ContextValidator
-from src.core.constants import INTERNAL_ERROR, MISSING_CONTEXT_FIELDS, REQUEST_RECEIVED
-from src.core.exceptions import MissingContextFieldsError, NL2SQLBaseError, SchemaLoadError
+from src.core.constants import INTERNAL_ERROR, REQUEST_RECEIVED
+from src.core.exceptions import NL2SQLBaseError, SchemaLoadError
 from src.core.logging.log_models import LogEntry
 from src.core.logging.logger import StructuredLogger
 from src.core.models import QueryContext
@@ -113,26 +116,9 @@ def tools_validator(
         )
     )
 
-    # ------------------------------------------------------------------
-    # Step 1 — Validate required context fields for this stage.
-    # Stage "validator" requires: app_id, app_schema_version, llm_output.
-    # Missing fields → HTTP 400 immediately.
-    # ------------------------------------------------------------------
-    try:
-        _context_validator.validate(context, stage_name="validator")
-    except MissingContextFieldsError as exc:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "failed",
-                "errors": [
-                    {"code": MISSING_CONTEXT_FIELDS, "message": exc.message}
-                ],
-                "missing_fields": exc.missing_fields or [],
-            },
-        )
-
-    # ------------------------------------------------------------------
+    
+    _context_validator.validate(context, stage_name="validator")
+        # ------------------------------------------------------------------
     # Step 2 — Run the full validator chain.
     # All four stages share the same schema_repo and logger.
     # All business errors are caught as NL2SQLBaseError — single handler.

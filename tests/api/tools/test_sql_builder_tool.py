@@ -177,7 +177,7 @@ class TestContextValidation:
         assert response.status_code == 400
         data = response.json()
         assert data["errors"][0]["code"] == "MISSING_CONTEXT_FIELDS"
-        assert "structured_query" in data["missing_fields"]
+        assert "structured_query" in data["errors"][0]["missing_fields"]
 
 
 # ---------------------------------------------------------------------------

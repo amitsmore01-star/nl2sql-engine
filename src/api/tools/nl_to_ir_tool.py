@@ -1,5 +1,8 @@
 # src/api/tools/nl_to_ir_tool.py
 # V0 - Initial implementation
+# V1 - Story 6.4: Removed route-level MissingContextFieldsError catch.
+#      Now handled by global exception handler (middleware.py → HTTP 400).
+#      Removed unused MISSING_CONTEXT_FIELDS and MissingContextFieldsError imports.
 #
 # Foundry tool endpoint: POST /v1/tools/nl-to-ir
 #
@@ -34,8 +37,7 @@ from fastapi.responses import JSONResponse
 from src.api.auth import require_foundry_key
 from src.api.models.response import ErrorDetail, ToolResponse
 from src.api.tools.context_validator import ContextValidator
-from src.core.constants import INTERNAL_ERROR, MISSING_CONTEXT_FIELDS, REQUEST_RECEIVED
-from src.core.exceptions import MissingContextFieldsError
+from src.core.constants import INTERNAL_ERROR, REQUEST_RECEIVED
 from src.core.logging.log_models import LogEntry
 from src.core.logging.logger import StructuredLogger
 from src.core.models import QueryContext
@@ -112,20 +114,8 @@ def tools_nl_to_ir(
     # Stage "nl-to-ir" requires: nl_query_original, app_id, app_schema_version.
     # Missing fields → HTTP 400 immediately.
     # ------------------------------------------------------------------
-    try:
-        _context_validator.validate(context, stage_name="nl-to-ir")
-    except MissingContextFieldsError as exc:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "failed",
-                "errors": [
-                    {"code": MISSING_CONTEXT_FIELDS, "message": exc.message}
-                ],
-                "missing_fields": exc.missing_fields or [],
-            },
-        )
-
+    _context_validator.validate(context, stage_name="nl-to-ir")
+    
     # ------------------------------------------------------------------
     # Step 2 — Intent Guard
     # Deterministic keyword scan. Does not raise — sets context.status if

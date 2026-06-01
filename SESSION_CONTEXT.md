@@ -37,6 +37,7 @@
 - 5.9 ✅ Tech Debt Closure + Hierarchy/Filter Fixes 
 - 6.1 ✅ Feedback Endpoint
 - 6.3 ✅ Apps Endpoint
+- 6.4 ✅ API Response Consistency 
 
 ## Completed Sprints
 Sprint 1 — Foundation ✅ COMPLETE
@@ -49,10 +50,10 @@ Sprint 5 — SQL Builder ✅ COMPLETE
 Sprint 6 — Feedback, API Completion & Tool Integration Tests
 
 ## Current Story
-Story 6.3 — Apps Endpoint ✅ COMPLETE
+Story 6.4 — API Response Consistency ✅ COMPLETE
 
 ## Next Story
-Story 6.4 — API Response Consistency
+Story 6.5 — Foundry Tool Integration Tests
 
 
 ## Files Built So Far
@@ -196,6 +197,12 @@ Story 6.4 — API Response Consistency
                                       built-in handlers so auth (401) and validation (422)
                                       continue to work normally.
                                       register_exception_handlers(app) called from app.py.
+                                    ← V1 (Story 6.4). Added missing_fields
+                                          inside errors[0] of the
+                                          MissingContextFieldsError 400 response.
+                                          Keeps top-level envelope clean while
+                                          giving Foundry agent a machine-readable
+                                          field list inside the error entry.  
 - src/api/health.py                 ← new in 1.5
                                     ← updated in 1.6 (log_dir path fixed)
 - src/api/auth.py                   ← new in 2.4 (require_client_key, require_foundry_key)
@@ -245,26 +252,38 @@ Story 6.4 — API Response Consistency
                                       app_id, app_schema_version) via ContextValidator.
                                       Runs Intent Guard then NL-to-IR Strategy.
                                       Returns ToolResponse with updated QueryContext.
-                                      Auth via Depends(require_foundry_key).  
+                                      Auth via Depends(require_foundry_key).
+                                    ← V1 (Story 6.4). Same — removed MissingContextFieldsError catch and unused imports.    
 
 src/api/tools/validator_tool.py     ← NEW V0. endpoint — mirrors nl_to_ir_tool.py pattern exactly
                                     ← V1. POST /v1/tools/validator — runs full validator chain, returns StructuredQuery
+                                    ← V2 (Story 6.4). Same — removed MissingContextFieldsError catch and unused imports.    
+                                  
 src/api/tools/sql_builder_tool.py   ← NEW V0. POST /v1/tools/sql-builder.
                                       Validates structured_query present (stage "sql-builder"),
                                       calls run_sql_builder(context, logger, settings),
                                       returns ToolResponse with context.sql populated.
                                       require_foundry_key auth. HTTP 400 on missing fields,
                                       HTTP 500 on unexpected error, HTTP 200 on success.
+                                    ← V1 (Story 6.4). Same — removed MissingContextFieldsError catch and unused imports.      
 - src/api/tools/app_identifier_tool.py  ← NEW V0. POST /v1/tools/app-identifier.
                                           Validates nl_query_original via ContextValidator(stage "app-identifier"). Runs Intent Guard then run_app_identifier(). Returns ToolResponse with app_id and app_schema_version populated.
                                           Sets context.status="success" on success.
                                           Business errors (APP_NOT_DETERMINED, MULTIPLE_APPS_MATCHED) → HTTP 200 with error
                                           in context. HTTP 400 on missing fields.
                                           HTTP 500 on unexpected error. require_foundry_key auth.
+                                        ← V1 (Story 6.4). Removed route-level
+                                          MissingContextFieldsError catch.
+                                          Now handled by global exception handler.
+                                          Removed unused MISSING_CONTEXT_FIELDS
+                                          and MissingContextFieldsError imports.
 src/api/tools/query_tool.py         ← POST /v1/tools/query — Foundry one-shot full pipeline
                                       endpoint. Accepts QueryContext with nl_query_original,
                                       calls run_pipeline(), returns ToolResponse with fully
                                       populated QueryContext including sql.
+                                      ← V1 (Story 6.4). Same — removed
+                                          MissingContextFieldsError catch and
+                                          unused imports.
 
 - src/api/v1/query.py               ← NEW V0. POST /v1/query skeleton.
                                       Builds QueryContext, calls run_app_identifier(),
@@ -524,7 +543,17 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                       D1-D2 logging verified (StructuredLogger patched,
                                       LogEntry payload inspected).
                                       Test-only throw routes added via app.add_api_route()
-                                      — no production code modified.                                            
+                                      — no production code modified.
+- tests/api/test_response_consistency.py ← NEW V0 (Story 6.4). 9 tests:
+                                           A1 confirms Story 3.7 TODO gone
+                                           (no raw QueryContext fields at top level),
+                                           B1-B5 ToolResponse shape on all 5 tool
+                                           endpoints (success path),
+                                           C1 user-facing business error envelope,
+                                           C2 confirms Story 6.4 fix (400 from
+                                           middleware, no missing_fields at top level,
+                                           missing_fields now inside errors[0]),
+                                           D1 feedback_tool 501 placeholder stable.                                                                                  
 - tests/core/logging/test_log_models.py     ← new in 1.6 (M1-M9)
 - tests/core/logging/test_logger.py         ← new in 1.6 (L1-L17)
 - tests/core/test_models.py                 ← new in 2.1
@@ -1102,7 +1131,35 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - schema_repo None handled by raising RuntimeError, caught by global
   exception handler (Story 6.2) → HTTP 500. Consistent with query.py's
   same broken-startup guard pattern.  
-  
+
+### API Response Consistency Audit (6.4)
+
+Audit results:
+- query.py V2: final QueryResponse shape confirmed, Story 3.7 TODO removed. ✅
+- feedback.py V0: {request_id, status, errors} — correct minimal envelope. ✅
+- apps.py V0: {request_id, status, data, errors} — correct. ✅
+- All 5 tool endpoints: ToolResponse shape on success/business-error paths. ✅
+- feedback_tool.py: 501 placeholder — intentionally minimal, Phase 3 concern. ✅
+
+One inconsistency fixed:
+- All 5 tool endpoints had a route-level except MissingContextFieldsError block
+  that returned {status, errors, missing_fields} — missing request_id, non-standard
+  top-level key.
+- Fix: removed the route-level catch from all 5 files. MissingContextFieldsError
+  now propagates to global exception handler (middleware.py, Story 6.2) which
+  returns the correct {request_id, status, errors} envelope.
+
+middleware.py V1 — missing_fields inside errors[0]:
+- After removing route-level catches, structured missing_fields list was only
+  available in exc.message as text.
+- Architecture Section 13.1: response body must list exactly which fields are
+  missing so agent can fix its call.
+- Decision: expose exc.missing_fields as a structured list INSIDE errors[0]
+  (not at top level). Top-level envelope stays clean. Agent gets machine-readable
+  field list. No non-standard top-level keys.
+  Response shape: {request_id, status,
+                   errors: [{code, message, missing_fields: [...]}]}
+
 ### Working Rule Reminder (3.7)
 - Before writing any code, ask for ALL files the new code depends on that have
   not been seen this session. One upload request upfront. No exceptions.
@@ -1180,10 +1237,16 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 ### Story 4.5 (Architecture v1.8)
 -Updated Section 2.3 Tech Debt Added pt 3 -6.
 
----
-
 ### Story 5.8 (Architecture v1.9)
 - Section 2.3 Tech Debt — added items 7–11 (single-instance hierarchy, schema
   vocabulary gap, LLM semantic matching, temperature config, second prompt example).
 - Section 9.3 — verified golden SQL matches actual pipeline output (no TOP 10000,
   AS AccName aliases, a_sub includes c.CustomerID condition, per-Acc TermDate).
+
+### Story 5.9 (Architecture v2.0)
+-Section 2.3 Tech Debt — items 7–11 resolved (Story 5.9); items 12, 13, 15 added and resolved; items 14, 16 added as deferred (LLM-Reliability story). 
+-Section 3.1 — added src/validator/synonym_matching.py. Validator alias-resolution + filter-validation behaviour documented. | 2.3, 3.1 
+ ### Story 6.4 (Architecture v2.1 ) 
+- Section 13.1 - Updated details of MISSING_CONTEXT_FIELDS . 
+
+ ---

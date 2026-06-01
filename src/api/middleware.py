@@ -87,6 +87,7 @@ async def _handle_missing_context_fields(
                 {
                     "code": MISSING_CONTEXT_FIELDS,
                     "message": exc.message,
+                     "missing_fields": exc.missing_fields
                 }
             ],
         },

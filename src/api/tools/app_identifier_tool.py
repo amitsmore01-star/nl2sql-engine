@@ -1,5 +1,8 @@
 # src/api/tools/app_identifier_tool.py
 # V0 - Initial implementation
+# V1 - Story 6.4: Removed route-level MissingContextFieldsError catch.
+#      Now handled by global exception handler (middleware.py → HTTP 400).
+#      Removed unused MISSING_CONTEXT_FIELDS and MissingContextFieldsError imports.
 #
 # Foundry tool endpoint: POST /v1/tools/app-identifier
 #
@@ -40,13 +43,11 @@ from src.api.tools.context_validator import ContextValidator
 from src.core.constants import (
     APP_NOT_DETERMINED,
     INTERNAL_ERROR,
-    MISSING_CONTEXT_FIELDS,
     MULTIPLE_APPS_MATCHED,
     REQUEST_RECEIVED,
 )
 from src.core.exceptions import (
     AppNotDeterminedError,
-    MissingContextFieldsError,
     MultipleAppsMatchedError,
 )
 from src.core.logging.log_models import LogEntry
@@ -123,20 +124,7 @@ def tools_app_identifier(
     # Stage "app-identifier" requires: nl_query_original only.
     # Missing fields → HTTP 400 immediately.
     # ------------------------------------------------------------------
-    try:
-        _context_validator.validate(context, stage_name="app-identifier")
-    except MissingContextFieldsError as exc:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "failed",
-                "errors": [
-                    {"code": MISSING_CONTEXT_FIELDS, "message": exc.message}
-                ],
-                "missing_fields": exc.missing_fields or [],
-            },
-        )
-
+    _context_validator.validate(context, stage_name="app-identifier")
     # ------------------------------------------------------------------
     # Step 2 — Intent Guard
     # Deterministic keyword scan. Does not raise — sets context.status if
