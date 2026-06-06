@@ -8,6 +8,8 @@
 #      sub-stage: table/column validator, join resolver, rule applicator).
 # V3 - Updated _GOLDEN_SQL after join_resolver.py V2 fix (duplicate join condition removed).
 #      a_sub join now has single AND c.CustomerID = a_sub.CustomerID (was duplicated).
+# V4 - Updated _GOLDEN_SQL after structured_query_builder.py V2 fix (output_alias dedup).
+#      Self-join AccName columns now emit AS topAccName / AS subAccName instead of AS AccName.
 #
 # Golden End-to-End test suite.
 # THIS FILE MUST NEVER FAIL — it is the safety net for the entire pipeline.
@@ -142,8 +144,8 @@ _GOLDEN_IR = json.dumps({
 _GOLDEN_SQL = """\
 SELECT
   cd.CustomerName  AS CustomerName,
-  a_top.AccName    AS AccName,
-  a_sub.AccName    AS AccName
+  a_top.AccName    AS topAccName,
+  a_sub.AccName    AS subAccName
 FROM Major.Customer c
 INNER JOIN Major.CustomerDemographics cd
   ON c.CustomerID = cd.CustomerID

@@ -13,6 +13,14 @@
 #      KNOWN LIMITATION (Bug #14, Phase 2): a fused-word duplicate (e.g. 'subaccount')
 #      matches no synonym and would be dropped even if legitimate — deferred.
 # V2 - Story 5.9 (Bug #15): Validate and pass through user FILTERS.
+# V3 - Bug fix: Role-duplicate table entries. When the LLM emits the same table
+#      more than once for the same hierarchy role (e.g. 4 Major.Acc entries where
+#      "top acc name" and "top acc key" both resolve to top_Acc), only the FIRST
+#      occurrence of each role is kept. Added seen_roles tracking inside
+#      _drop_phantom_duplicates — after a matching entry is accepted, its resolved
+#      hierarchy role is recorded; a second entry that resolves to the same role is
+#      dropped with a warning. Entries that match only via table reference (no role)
+#      are unaffected by this check.
 #      Previously the validator handled only tables and columns; llm_output['filters']
 #      was never copied into context.resolved_filters, so every user filter (e.g.
 #      CustomerCID = 'ASA') was silently lost and never reached the WHERE clause.
@@ -118,6 +126,7 @@ def _drop_phantom_duplicates(
             has_match[t_name] = True
 
     cleaned: list[dict] = []
+    seen_roles: dict[str, set] = {}
     for entry in proposed_tables:
         t_name = entry.get("table", "")
 
@@ -135,6 +144,18 @@ def _drop_phantom_duplicates(
         )
 
         if matches:
+            role = match_hierarchy_role(source, t_schema) if t_schema is not None else None
+            if role is not None:
+                if t_name not in seen_roles:
+                    seen_roles[t_name] = set()
+                if role in seen_roles[t_name]:
+                    context.warnings.append(
+                        f"Dropped duplicate table entry '{t_name}' (source "
+                        f"'{source}') — hierarchy role '{role}' already represented. "
+                        f"LLM listed the same logical instance multiple times."
+                    )
+                    continue
+                seen_roles[t_name].add(role)
             cleaned.append(entry)
             kept_any[t_name] = True
             continue

@@ -81,18 +81,24 @@ Story 6.6 — Full API Integration Test
 - config/prompts.yaml               ← NEW V0. Sectioned prompt definitions.Three examples: hierarchy_with_filter,
                                       filter_only_customer, aggregation_with_limit.example_sets: default (3 examples) + minimal (1).
                                       user_template contains <SCHEMA_SUMMARY> + <USER_QUERY>.
-                                     ← TO UPDATE. Add strict synonym matching rule to rules.tables section. Add strict_synonym_matching
-                                      example. Add to default example_set.
                                     ← V1 (Story 5.9). Added negative_strict_synonym example ("topaccount" must NOT
                                       match "top acc"). Added fused-word prohibition to rules.tables. Added the example
                                       to both default and minimal example_sets.
+                                    ← V2 (Bug 2). Added "one entry per logical role" to tables rules — prevents
+                                      LLM from emitting one table entry per column.
+                                    ← V3 (Bug 3). Added customer_name_filter_table example. Demonstrates that
+                                      CustomerName lives on Major.CustomerDemographics, not Major.Customer.
+                                      Added to both default and minimal example_sets.
 - config/mock_responses.json        ← NEW V0. Mock LLM responses for JSON mode.
                                       Each entry has user_input (exact match string) and llm_response (IR JSON string). First entry:
                                       "give me topaccount name for customer ASA".
                                     ← V1 (Story 5.8). Added app_id field to entries without "in ABC" (App Identifier needs explicit app_id when query has no app synonym). Added final_sql field to each entry — populated by scripts/generate_mock_sql.py, used by Part B data-driven E2E assertions.
 
 ### Schemas
-- schemas/ABC_app.json
+- schemas/ABC_app.json              ← Updated (Bug fix). Added fused synonym forms to Major.Acc:
+                                      table-level synonyms: topacc, topaccs, subacc, subaccs.
+                                      top_Acc hierarchy synonyms: topacc, topaccs.
+                                      sub_Acc hierarchy synonyms: subacc, subaccs.
 
 ### Source
 - src/config/settings.py            ← new in 1.2
@@ -135,10 +141,6 @@ Story 6.6 — Full API Integration Test
 - src/core/constants.py             ← new in 1.6 (log stage constants only)
                                     ← updated in 2.1 (all 12 error code constants added)
                                     ← V2. Added UNKNOWN_PROVIDER error code constant.
-                                    ← TO UPDATE in Story 3.5: V3 — add UNKNOWN_STRATEGY error
-                                      code constant. Also update log stage constants:
-                                      remove LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT,
-                                      add INTENT_GUARD_RESULT + LLM_OUTPUT.
                                     ← V3. Replaced LLM_INTENT_OUTPUT + LLM_SCHEMA_MAPPING_OUTPUT
                                       with INTENT_GUARD_RESULT + LLM_OUTPUT.
                                       Added UNKNOWN_STRATEGY error code constant.
@@ -293,11 +295,6 @@ src/api/tools/query_tool.py         ← POST /v1/tools/query — Foundry one-sho
                                       sql=None until pipeline wired (Story 5.4).
                                       Business errors → HTTP 200 with errors[].
                                       Internal errors → HTTP 500.
-                                    ← TO UPDATE in Story 3.7: V1 — call orchestrator
-                                      instead of run_app_identifier() directly.
-                                      Returns temporary full QueryContext response shape.
-                                      TODO marker added — Story 5.4 replaces with final
-                                      QueryResponse shape.
                                     ← V1. Replaced direct run_app_identifier() call with
                                       run_pipeline() (orchestrator). Reads llm_provider
                                       from app.state. Response is now full QueryContext dict
@@ -339,7 +336,13 @@ src/api/tools/query_tool.py         ← POST /v1/tools/query — Foundry one-sho
                                             schema. Table check runs first — failure stops column
                                             check. Populates resolved_tables and resolved_columns
                                             with full dicts (source preserved). Emits
-                                            VALIDATION_RESULT log on success.                                      
+                                            VALIDATION_RESULT log on success.
+                                          ← V1 (Story 5.9, Bug #13). Drop phantom duplicate table entries.
+                                          ← V2 (Story 5.9, Bug #15). Validate and pass through user filters.
+                                          ← V3 (Bug 2). Role-duplicate dedup. Added seen_roles tracking in
+                                            _drop_phantom_duplicates — drops second entry for same hierarchy
+                                            role. Prevents 4 Major.Acc entries (one per column) becoming
+                                            4 JOIN clauses.
 src/validator/join_resolver.py            ← NEW V0. run_join_resolver(context, schema_repo, logger). Schema-driven alias generation,
                                             hierarchy role assignment, self-join detection, junction auto-bridging. Emits VALIDATION_RESULT log.
                                           ← V1. Stamps role on resolved_columns and resolved_filters entries for self-join tables.
@@ -357,6 +360,9 @@ src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(contex
 src/validator/structured_query_builder.py       ← V0. Translates enriched QueryContext dicts into typed StructuredQuery model. 
                                                   Logs error before raising on self-join alias ambiguity
                                                  ← V1 (Story 5.9, Bug #12). Single-instance alias fallback: when a column/filter (table, role) lookup misses on a single-instance table, resolves to that table's one alias + records a warning. Self-join tables still raise StructuredQueryBuildError on role=None.
+                                                 ← V2 (Bug fix). output_alias dedup for self-join columns. Self-join
+                                                   columns now get output_alias = role.split("_")[0] + column_name
+                                                   (e.g. topAccName, subAccName). Non-self-join columns unaffected.
 src/validator/synonym_matching.py         ← NEW V0 (Story 5.9, Bug #13/DD-4). Single source of truth for source→synonym matching.
                                             Three pure functions: match_table_reference, match_hierarchy_role, table_has_hierarchy.
                                             Whole-word, case-insensitive. Used by join_resolver and table_column_validator.
@@ -518,6 +524,8 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                 ← V1. Root conftest.py fixes 401. LOG_DIR via monkeypatch before create_app() fixes empty log stages.
                                 ← V2. _GOLDEN_SQL updated to actual output. A4 expects VALIDATION_RESULT x3 (one per validator sub-stage).
                                 ← V3. _GOLDEN_SQL updated after join_resolver V2 fix — a_sub join now has single c.CustomerID condition.
+                                ← V4. _GOLDEN_SQL updated after structured_query_builder V2 fix — AccName
+                                  columns now emit AS topAccName / AS subAccName instead of AS AccName.
 
 - tests/conftest.py                 ← NEW V0 (Story 5.8). Root-level autouse fixture
                                       injects ENV, CLIENT_API_KEY, FOUNDRY_API_KEY,
@@ -585,8 +593,10 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                                   E1-E3 ordering and logging.
                                                 ← V1 (Story 5.9, Bug #13). Added TestPhantomDuplicateTables (P1–P6).
                                                 ← V2 (Story 5.9, Bug #15). Added TestFilterValidation (F1–F6); extended make_context with filters=.
+                                                ← V3 (Bug 2). Added TestRoleDuplicateTables (P7–P12). 28 tests total.
 - tests/validator/test_structured_query_builder.py ← NNW V0 11 scenarios covering happy path, self-join alias resolution, error logging
                                                   ← V1 (Story 5.9, Bug #12). Added TestSingleInstanceFallback (SB-1–SB-5).
+                                                  ← V2 (Bug fix). Added TestOutputAlias (F1–F4). 21 tests total.
 - tests/validator/test_join_resolver.py            ← NEW V0. 16 tests.
                                                   ← V1 (Story 4.5). Added class H — 3 scenarios for role stamping on columns and filters.
                                                   ← V2 (Story 5.9). Added TestSingleInstanceHierarchy (JR-S1–S4).
@@ -674,6 +684,8 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
 - tests/llm/test_anthropic_provider.py      ← NEW V0. 8 tests: F1-F8.
 - tests/llm/test_azure_foundry_provider.py  ← NEW V0. 11 tests: F1-F11. F11 is unique — verifies "model" field in request body (key Foundry difference).
 - tests/pipeline/test_schema_summary.py     ← NEW V0. 10 tests: A1-A6, B1, C1-C4.
+                                            ← V1. Updated test_a5 assertion: CustomerName now has two
+                                              synonyms [Customer name, customername]. Pre-existing failure resolved.
 - tests/pipeline/strategies/__init__.py       ← NEW V0. in Story 3.5
 - tests/pipeline/strategies/test_base.py      ← NEW V0. in Story 3.5 5 tests: A1-A4 + A2 extended.
 - tests/pipeline/strategies/test_factory.py   ← NEW V0. in Story 3.5 5 tests: B1-B4 + B1 extended.
@@ -1113,13 +1125,14 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Bug #16 handling: keep loud failure (no silent guessing). Deferred to the LLM-Reliability story.
 
 ### Known Issues / Deferred
-- Bug #14 — fused hierarchy words ("subaccount", "topaccount") don't match a role under whole-word matching → DEFERRED to LLM-Reliability story.
-- Bug #16 — LLM omits or misroutes the filter table (drops Major.Customer, or forces the customer filter onto Major.Acc.CustomerID) → causes correct loud failure (Stage 3 reject, or self-join ambiguity guard). DEFERRED to LLM-Reliability story.
-- KI-2 — Bug #13 may silently drop a legitimate fused-word duplicate. Resolved once Bug #14 lands.
+- Bug #14 (partial) — fused forms "topacc", "topaccs", "subacc", "subaccs" now added to
+  ABC_app.json as explicit synonyms (both table-level and hierarchy level). "subaccount" /
+  "topaccount" still deferred — would require updating the negative_strict_synonym prompt
+  example which currently treats them as negative examples.
+- Bug #16 — LLM omits or misroutes the filter table (drops Major.Customer, or forces the
+  customer filter onto Major.Acc.CustomerID) → causes correct loud failure. Prompt example
+  customer_name_filter_table added (prompts.yaml V3) as prevention. DEFERRED if LLM ignores it.
 - KI-6 — mitigated: matching logic centralised in synonym_matching.py (single upgrade point).
-- Pre-existing test failure: tests/pipeline/test_schema_summary.py::test_a5_column_synonyms_appear_in_brackets
-  asserts "CustomerName [Customer name]" but schema now has two synonyms → emits "CustomerName [Customer name, customername]".
-  Caused by user adding "customername" synonym to ABC_app.json (Bug C investigation). Fix: update test assertion.
 
 ### Feedback Endpoint Response Shape (6.1)
 - POST /v1/feedback returns {request_id, status, errors} only — no data/meta blocks.
@@ -1252,8 +1265,7 @@ middleware.py V1 — missing_fields inside errors[0]:
   Extracted _try_join_instance helper (self-join / direct / junction bridge strategies).
   All join logic remains fully schema-driven — zero hardcoding. No behaviour change for
   tables that were already joinable in order (all existing tests unaffected).
-  35/35 join resolver tests pass; 797/798 suite passes (1 pre-existing failure
-  unrelated to this change — test_a5_column_synonyms_appear_in_brackets).
+  35/35 join resolver tests pass.
   Bug report: bup-reports/BUG-2026-06-06-deferred-join-out-of-order-tables.md
 
 
@@ -1265,6 +1277,34 @@ middleware.py V1 — missing_fields inside errors[0]:
 - Bug #12 — single-instance hierarchy column/filter alias unresolved (empty ".AccName") → fixed (structured_query_builder V1 single-instance fallback)
 - Bug #13 — phantom DUPLICATE table entries (LLM emits a table twice, second is a column ref like "accKey") → fixed (table_column_validator V1, drop phantom duplicates via shared matcher)
 - Bug #15 — user filters never copied into resolved_filters (silently lost, never reached WHERE) → fixed (table_column_validator V2, Stage 3 filter validation + pass-through)
+
+### Bug Fix (table_column_validator.py V3 — role-duplicate table entries)
+- LLM emitted one Major.Acc table entry per column (4 entries for 2 columns × 2 roles),
+  all passing phantom-drop because all matched hierarchy synonyms. Result: 4 JOIN clauses
+  instead of 2. Fixed by adding seen_roles tracking in _drop_phantom_duplicates: once a
+  hierarchy role is represented, any later entry for the same role is dropped with a warning.
+  Column entries are unaffected — all columns still appear in resolved_columns.
+  28/28 validator tests pass. Full suite: 808 passed, 0 failed.
+  Bug report: bup-reports/BUG-2026-06-06-role-duplicate-table-entries.md
+
+### Bug Fix (structured_query_builder.py V2 — output_alias dedup)
+- Both AccName columns from top_Acc and sub_Acc previously emitted AS AccName in the SELECT
+  clause — ambiguous SQL. Fixed: for columns on a self-join table with a known role,
+  output_alias = role.split("_")[0] + column_name (e.g. topAccName, subAccName).
+  Non-self-join and single-instance columns are unaffected.
+  21/21 structured_query_builder tests pass. E2E golden SQL updated to reflect new aliases.
+  Full suite: 808 passed, 0 failed.
+
+### Bug Fix (schemas/ABC_app.json + prompts.yaml V3 — fused synonyms + CustomerName filter)
+- Added fused synonym forms topacc, topaccs, subacc, subaccs to Major.Acc table-level and
+  hierarchy level synonyms in ABC_app.json. Enables LLM to match fused-word user terms
+  to the correct hierarchy role without relying on whole-word multi-token matching.
+- Added customer_name_filter_table example to prompts.yaml V3. Demonstrates CustomerName
+  lives on Major.CustomerDemographics, not Major.Customer — prevents LLM from assigning
+  the filter to the wrong table.
+- Pre-existing test_a5 failure resolved: test_schema_summary.py V1 updated assertion to
+  match current schema (CustomerName [Customer name, customername]).
+  Full suite: 808 passed, 0 failed.
 
 
 ### Azure AI Foundry Provider (Adhoc added)

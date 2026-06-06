@@ -1,5 +1,9 @@
 # tests/pipeline/test_schema_summary.py
 # V0 - Initial implementation
+# V1 - Updated test_a5 assertion: CustomerName now has two synonyms
+#      ["Customer name","customername"] after "customername" was added to
+#      ABC_app.json during Bug C investigation. Output is now
+#      "CustomerName [Customer name, customername]".
 #
 # Tests for build_schema_summary() in src/pipeline/schema_summary.py
 #
@@ -112,9 +116,10 @@ class TestOutputContent:
             "CustomerCID synonyms must appear in brackets in the summary"
         )
 
-        # CustomerName has synonyms: ["Customer name"]
-        assert "CustomerName [Customer name]" in result, (
-            "CustomerName synonym must appear in brackets in the summary"
+        # CustomerName has synonyms: ["Customer name", "customername"]
+        # (second synonym added to ABC_app.json during Bug C investigation)
+        assert "CustomerName [Customer name, customername]" in result, (
+            "CustomerName synonyms must appear in brackets in the summary"
         )
 
     def test_a6_no_types_rules_or_versioning_in_output(self):

@@ -1,6 +1,13 @@
 # config/prompts.yaml
 # V0 - Initial implementation
 # V1 - Story 5.9: Added negative_strict_synonym example (topaccount -> top acc).
+# V2 - Bug 2: Added rule "one entry per logical role" to tables rules to prevent
+#      LLM from emitting one table entry per column (e.g. 4 Major.Acc entries
+#      for 2 columns × 2 hierarchy levels).
+# V3 - Bug 3: Added customer_name_filter_table example demonstrating that
+#      CustomerName lives on Major.CustomerDemographics, not Major.Customer.
+#      Reinforces the existing filters rule: look up the table in the schema
+#      summary before assigning a filter's table field.
 #      Demonstrates that "topaccount" must NOT match "top acc" or "top Acc"
 #      because "topaccount" is not in the synonym list. Added to default and
 #      minimal example sets. Reinforces strict synonym-only matching rule.
@@ -62,7 +69,7 @@ nl_to_structured_query:
     tables:
       - Only propose tables that appear by name in the schema summary
       - Include every table needed to answer the query — including tables needed only for joins
-      - If the same table is needed twice with different roles (e.g. top acc and sub acc), include it twice with different source values
+      - If the same table is needed twice with different roles (e.g. top acc and sub acc), include it twice with different source values — one entry per logical role, not one entry per column
       - Never propose junction tables — they are hidden from you intentionally
       - Only map a user term to a table if the term exactly matches (case-insensitive) the table's display name or one of its listed synonyms. Do not use semantic
         similarity, common knowledge, or language inference to guess a match — for example, do not map 'clients' to a table whose synonyms are [customer, organization]
@@ -114,11 +121,13 @@ nl_to_structured_query:
       - aggregation_with_limit
       - strict_synonym_matching
       - negative_strict_synonym
+      - customer_name_filter_table
 
     minimal:
       - hierarchy_with_filter
       - strict_synonym_matching
       - negative_strict_synonym
+      - customer_name_filter_table
 
   examples:
 
@@ -156,6 +165,58 @@ nl_to_structured_query:
         similarity ("topaccount" sounds like "top account") is NOT a valid match.
         Only exact case-insensitive matches against the display name or synonyms
         are permitted. Return empty tables when no exact match exists.
+
+    customer_name_filter_table:
+      schema: |
+        table: Major.Customer [customer, organization, org]
+          CustomerID
+          CustomerCID [Customer id, Customer cid]
+        table: Major.CustomerDemographics [Customer demographics, demographics]
+          CustomerID
+          CustomerName [Customer name, customername]
+      query: "give me customer name for customer ASA in ABC"
+      correct: |
+        {
+          "tables": [
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.CustomerDemographics", "source": "customer name"}
+          ],
+          "columns": [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"}
+          ],
+          "filters": [
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+          ],
+          "limit": null,
+          "aggregation": null,
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      incorrect: |
+        {
+          "tables": [
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.CustomerDemographics", "source": "customer name"}
+          ],
+          "columns": [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"}
+          ],
+          "filters": [
+            {"table": "Major.Customer", "column": "CustomerName", "operator": "=", "value": "ASA", "source": "customer ASA"}
+          ],
+          "limit": null,
+          "aggregation": null,
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      why_wrong: |
+        The filter references CustomerName on Major.Customer, but CustomerName does not
+        exist on Major.Customer — it lives on Major.CustomerDemographics. Always look up
+        which table owns a column in the schema summary before assigning the filter's
+        "table" field. The user phrase "customer ASA" means filter by CustomerCID on
+        Major.Customer (the identifier for that table), not by CustomerName.
 
     strict_synonym_matching:
       schema: |

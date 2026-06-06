@@ -1,6 +1,13 @@
 # src/validator/structured_query_builder.py
 # V0 - Initial implementation
 # V1 - Story 5.9 (Bug #12): Single-instance hierarchy alias-resolution fallback.
+# V2 - Bug fix: output_alias deduplication for self-join columns.
+#      When both AccName columns (top_Acc and sub_Acc) get output_alias=column_name
+#      they both emit AS AccName in the SELECT clause — ambiguous SQL.
+#      Fix: for columns on a self-join table with a known role, output_alias is
+#      prefixed with the first segment of the role name (role.split("_")[0]).
+#      E.g. top_Acc + AccName → topAccName, sub_Acc + AccName → subAccName.
+#      Non-self-join and single-instance columns are unaffected.
 #      Problem: a hierarchy table (e.g. Major.Acc) appearing ONCE got its role
 #      stamped on the table entry (alias a_top, role top_Acc) but the LLM
 #      sometimes dropped the hierarchy word from a column's source (e.g. "accid"
@@ -45,7 +52,9 @@
 #   Orchestrator catches this and sets context.status = "failed".
 #
 # Output alias:
-#   ResolvedColumn.output_alias defaults to the column name itself (Phase 1).
+#   Non-self-join columns: output_alias = column_name (Phase 1).
+#   Self-join columns (same table, two roles): output_alias = role_prefix + column_name.
+#     role_prefix = role.split("_")[0]  e.g. top_Acc → "top", sub_Acc → "sub".
 #   Phase 3: extend for user-specified aliases ("customer name as Name").
 
 import time
@@ -196,10 +205,16 @@ def _build_resolved_columns(
                 f"to the single instance of '{table_name}' (alias '{alias}')."
             )
 
+        # For self-join columns, prefix the output alias with the role's first
+        # segment so both levels get distinct AS names (e.g. topAccName, subAccName).
+        output_alias = column_name
+        if table_name in self_join_tables and role is not None:
+            output_alias = role.split("_")[0] + column_name
+
         columns.append(ResolvedColumn(
             table_alias=alias,
             column_name=column_name,
-            output_alias=column_name,   # Phase 1: always same as column name
+            output_alias=output_alias,
         ))
 
     return columns, warnings

@@ -1,5 +1,6 @@
 # tests/validator/test_table_column_validator.py
 # V0 - Initial implementation
+# V3 - Added TestRoleDuplicateTables (P7-P12) for Bug 2 role-dedup
 #
 # Tests for run_table_column_validator() in src/validator/table_column_validator.py
 #
@@ -519,3 +520,160 @@ class TestFilterValidation:
         entry = capturing_logger.entries[0]
         assert "resolved_filters" in entry.payload
         assert len(entry.payload["resolved_filters"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Group P — Role-duplicate table deduplication  [Bug 2]
+# ---------------------------------------------------------------------------
+# The LLM sometimes emits one table entry per column rather than one per logical
+# role — e.g. 4 Major.Acc entries (top acc name, top acc key, sub acc name,
+# sub acc key) when the user asks for two columns from each hierarchy level.
+# All 4 entries pass the existing phantom-drop check because all match the
+# hierarchy synonyms. The fix adds seen_roles tracking: once a hierarchy role is
+# represented by a kept entry, any later entry that resolves to the SAME role is
+# dropped with a warning. Each column is still included in resolved_columns — only
+# the duplicate table entries are removed.
+
+class TestRoleDuplicateTables:
+
+    def test_p7_four_acc_entries_two_per_role_deduped_to_two(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        P7 — Main bug: LLM emits 4 Acc entries (top acc name, top acc key,
+        sub acc name, sub acc key). Both top-role and sub-role appear twice.
+        Result: 2 resolved_tables — first occurrence of each role is kept.
+        """
+        tables = [
+            {"table": "Major.Acc", "source": "top acc name"},
+            {"table": "Major.Acc", "source": "top acc key"},
+            {"table": "Major.Acc", "source": "sub acc name"},
+            {"table": "Major.Acc", "source": "sub acc key"},
+        ]
+        context = make_context(tables=tables, columns=[])
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert len(result.resolved_tables) == 2
+        sources = [e["source"] for e in result.resolved_tables]
+        assert "top acc name" in sources
+        assert "sub acc name" in sources
+        assert "top acc key" not in sources
+        assert "sub acc key" not in sources
+
+    def test_p8_two_acc_entries_different_roles_both_kept(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        P8 — Regression: 2 Acc entries with distinct roles (top_Acc, sub_Acc).
+        Both entries map to different roles — both must be kept unchanged.
+        This is the normal self-join case.
+        """
+        tables = [
+            {"table": "Major.Acc", "source": "top acc"},
+            {"table": "Major.Acc", "source": "sub acc"},
+        ]
+        context = make_context(tables=tables, columns=[])
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert len(result.resolved_tables) == 2
+        sources = [e["source"] for e in result.resolved_tables]
+        assert "top acc" in sources
+        assert "sub acc" in sources
+
+    def test_p9_two_acc_entries_same_role_second_dropped(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        P9: Two Acc entries that both resolve to top_Acc role.
+        Second entry is dropped — only 1 entry remains.
+        """
+        tables = [
+            {"table": "Major.Acc", "source": "top acc"},
+            {"table": "Major.Acc", "source": "top Accs"},
+        ]
+        context = make_context(tables=tables, columns=[])
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert len(result.resolved_tables) == 1
+        assert result.resolved_tables[0]["source"] == "top acc"
+
+    def test_p10_warning_appended_for_each_role_duplicate(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        P10: For each dropped role-duplicate, a warning is appended to
+        context.warnings. The warning names the table, the dropped source,
+        and the role already represented.
+        """
+        tables = [
+            {"table": "Major.Acc", "source": "top acc name"},
+            {"table": "Major.Acc", "source": "top acc key"},
+            {"table": "Major.Acc", "source": "sub acc name"},
+            {"table": "Major.Acc", "source": "sub acc key"},
+        ]
+        context = make_context(tables=tables, columns=[])
+
+        run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        # Two role-duplicates dropped → two warnings
+        role_dup_warnings = [
+            w for w in context.warnings if "already represented" in w
+        ]
+        assert len(role_dup_warnings) == 2
+        # Warning mentions the dropped source
+        all_text = " ".join(role_dup_warnings)
+        assert "top acc key" in all_text
+        assert "sub acc key" in all_text
+
+    def test_p11_all_columns_present_after_table_role_dedup(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        P11: Role dedup removes duplicate table entries only. All 4 column
+        entries (AccName × 2, AccKey × 2) must still appear in resolved_columns.
+        Columns are attached to Major.Acc which survives dedup (2 entries remain),
+        so column validation passes for all 4 columns.
+        """
+        tables = [
+            {"table": "Major.Acc", "source": "top acc name"},
+            {"table": "Major.Acc", "source": "top acc key"},
+            {"table": "Major.Acc", "source": "sub acc name"},
+            {"table": "Major.Acc", "source": "sub acc key"},
+        ]
+        columns = [
+            {"table": "Major.Acc", "column": "AccName", "source": "top acc name"},
+            {"table": "Major.Acc", "column": "AccKey", "source": "top acc key"},
+            {"table": "Major.Acc", "column": "AccName", "source": "sub acc name"},
+            {"table": "Major.Acc", "column": "AccKey", "source": "sub acc key"},
+        ]
+        context = make_context(tables=tables, columns=columns)
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert len(result.resolved_tables) == 2
+        assert len(result.resolved_columns) == 4
+        col_names = [e["column"] for e in result.resolved_columns]
+        assert col_names.count("AccName") == 2
+        assert col_names.count("AccKey") == 2
+
+    def test_p12_single_instance_table_not_scrutinised_by_role_dedup(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        P12: A single-instance table (Major.Acc appearing once) is never
+        scrutinised — not by phantom-drop and not by role-dedup. Even if its
+        source would match a role synonym, it is passed through as-is.
+        """
+        tables = [
+            {"table": "Major.Acc", "source": "top acc name"},
+        ]
+        context = make_context(tables=tables, columns=[])
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert len(result.resolved_tables) == 1
+        assert result.resolved_tables[0]["source"] == "top acc name"
+        assert context.warnings == []

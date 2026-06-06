@@ -1,6 +1,7 @@
 # tests/validator/test_structured_query_builder.py
 # V0 - Initial implementation
 # V1 - Story 5.9 (Bug #12): Added class E -- TestSingleInstanceFallback (SB-1 to SB-5)
+# V2 - Bug fix: Added class F -- TestOutputAlias (F1-F4) for self-join output_alias dedup
 #
 # Test scenarios:
 #
@@ -486,3 +487,96 @@ class TestSingleInstanceFallback:
         assert sq.columns[0].table_alias == "c"
         # (Major.Customer, None) hit the composite lookup directly -> no fallback warning
         assert result.warnings == []
+
+
+# ---------------------------------------------------------------------------
+# F — Output alias deduplication for self-join columns  [Bug fix V2]
+# ---------------------------------------------------------------------------
+# When the same table appears twice (self-join), both role columns share the same
+# column_name (e.g. AccName). Without a prefix both emit AS AccName in SELECT —
+# ambiguous SQL. Fix: self-join columns get output_alias = role_prefix + column_name.
+
+class TestOutputAlias:
+
+    def test_F1_self_join_acc_name_both_roles_get_distinct_aliases(self, capturing_logger):
+        """
+        F1: AccName requested from top_Acc and sub_Acc.
+        output_alias must be 'topAccName' and 'subAccName' — not 'AccName' twice.
+        """
+        ctx = _make_context(
+            tables=[
+                {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"},
+                {"table": "Major.Acc", "source": "sub acc", "alias": "a_sub", "role": "sub_Acc"},
+            ],
+            columns=[
+                {"table": "Major.Acc", "column": "AccName", "source": "top acc name", "role": "top_Acc"},
+                {"table": "Major.Acc", "column": "AccName", "source": "sub acc name", "role": "sub_Acc"},
+            ],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        aliases = {c.output_alias for c in sq.columns}
+        assert "topAccName" in aliases
+        assert "subAccName" in aliases
+        # No plain 'AccName' in output_alias
+        assert "AccName" not in aliases
+
+    def test_F2_self_join_multiple_columns_all_get_role_prefix(self, capturing_logger):
+        """
+        F2: AccName and AccKey requested from both roles → 4 distinct output aliases.
+        topAccName, topAccKey, subAccName, subAccKey.
+        """
+        ctx = _make_context(
+            tables=[
+                {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"},
+                {"table": "Major.Acc", "source": "sub acc", "alias": "a_sub", "role": "sub_Acc"},
+            ],
+            columns=[
+                {"table": "Major.Acc", "column": "AccName", "source": "top acc name", "role": "top_Acc"},
+                {"table": "Major.Acc", "column": "AccKey",  "source": "top acc key",  "role": "top_Acc"},
+                {"table": "Major.Acc", "column": "AccName", "source": "sub acc name", "role": "sub_Acc"},
+                {"table": "Major.Acc", "column": "AccKey",  "source": "sub acc key",  "role": "sub_Acc"},
+            ],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        aliases = {c.output_alias for c in sq.columns}
+        assert aliases == {"topAccName", "topAccKey", "subAccName", "subAccKey"}
+
+    def test_F3_non_self_join_column_output_alias_unchanged(self, capturing_logger):
+        """
+        F3: Regression — non-self-join table column output_alias = column_name (no prefix).
+        """
+        ctx = _make_context(
+            tables=[{"table": "Major.Customer", "source": "customer", "alias": "c"}],
+            columns=[
+                {"table": "Major.Customer", "column": "CustomerCID",  "source": "id"},
+                {"table": "Major.Customer", "column": "CustomerName", "source": "name"},
+            ],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        assert sq.columns[0].output_alias == "CustomerCID"
+        assert sq.columns[1].output_alias == "CustomerName"
+
+    def test_F4_single_instance_hierarchy_column_output_alias_unchanged(self, capturing_logger):
+        """
+        F4: Single-instance Acc (not a self-join) — column output_alias = column_name.
+        Role prefix applies only to self-join tables (count > 1).
+        """
+        ctx = _make_context(
+            tables=[
+                {"table": "Major.Customer", "source": "customer", "alias": "c"},
+                {"table": "Major.Acc", "source": "top acc", "alias": "a_top", "role": "top_Acc"},
+            ],
+            columns=[
+                {"table": "Major.Acc", "column": "AccName", "source": "top acc name", "role": "top_Acc"},
+            ],
+        )
+        result = run_structured_query_builder(ctx, capturing_logger)
+
+        sq = result.structured_query
+        assert sq.columns[0].output_alias == "AccName"
