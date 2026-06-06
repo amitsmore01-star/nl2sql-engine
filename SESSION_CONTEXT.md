@@ -349,6 +349,9 @@ src/validator/join_resolver.py            ← NEW V0. run_join_resolver(context,
                                           ← V3 (Story 5.9, Bug #7). Stamps hierarchy role on single-instance hierarchy tables (not just self-join); warns when source matches no level.
                                           ← V4 (Story 5.9, Bug #12). Stamps role on columns/filters for single-instance hierarchy tables too (not just self-join).
                                           ← V5 (Story 5.9, Bug #13/DD-4). Extracted _match_hierarchy_role + _table_has_hierarchy into shared synonym_matching module; imports them now (pure refactor, no behaviour change).
+                                          ← V6 (Bug fix — deferred join). Replaced strict for-loop with multi-pass deferred algorithm.
+                                            Extracted _try_join_instance helper. NoJoinPathError raised only after full pass with zero
+                                            progress. Fixes false errors when LLM returns tables out of join order.
 src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(context, schema_repo, logger). 
                                             Applies active_record, versioning, hierarchy conditions with alias prefix. Suppress token check. Deduplication. Emits VALIDATION_RESULT log.
 src/validator/structured_query_builder.py       ← V0. Translates enriched QueryContext dicts into typed StructuredQuery model. 
@@ -585,10 +588,11 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
 - tests/validator/test_structured_query_builder.py ← NNW V0 11 scenarios covering happy path, self-join alias resolution, error logging
                                                   ← V1 (Story 5.9, Bug #12). Added TestSingleInstanceFallback (SB-1–SB-5).
 - tests/validator/test_join_resolver.py            ← NEW V0. 16 tests.
+                                                  ← V1 (Story 4.5). Added class H — 3 scenarios for role stamping on columns and filters.
                                                   ← V2 (Story 5.9). Added TestSingleInstanceHierarchy (JR-S1–S4).
-                                                   ← V3 (Story 5.9). Added JR-S5–S8 (role stamping on columns/filters for single-instance).
-                                                    bridge, E1 no join path, F1-F4 alias generation, G1 logging.
-                                                  ← V1 Added class H — 3 scenarios for role stamping on columns and filters
+                                                  ← V3 (Story 5.9). Added JR-S5–S8 (role stamping on columns/filters for single-instance).
+                                                  ← V4 (Bug fix). Added TestDeferredJoin (J1–J8): J1-J4 test multi-pass deferred
+                                                    resolution; J5-J8 are regression guards. 35 tests total, all passing.
 - tests/validator/test_rule_applicator.py         ← NEW V0. 19 tests: A1-A3 active record, B1-B2 versioning, C1-C3 hierarchy, D1-D3 suppress tokens,
                                                     E1 deduplication, F1 logging, plus TestQualifyCondition unit tests.
 - tests/validator/test_synonym_matching.py  ← NEW V0 (Story 5.9). 8 scenarios: HM-1/2/3 hierarchy role match, HM-4 fused-word miss (documents Bug #14), HM-5 table_has_hierarchy, HM-6/7/8 table-reference matching.
@@ -1113,6 +1117,9 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - Bug #16 — LLM omits or misroutes the filter table (drops Major.Customer, or forces the customer filter onto Major.Acc.CustomerID) → causes correct loud failure (Stage 3 reject, or self-join ambiguity guard). DEFERRED to LLM-Reliability story.
 - KI-2 — Bug #13 may silently drop a legitimate fused-word duplicate. Resolved once Bug #14 lands.
 - KI-6 — mitigated: matching logic centralised in synonym_matching.py (single upgrade point).
+- Pre-existing test failure: tests/pipeline/test_schema_summary.py::test_a5_column_synonyms_appear_in_brackets
+  asserts "CustomerName [Customer name]" but schema now has two synonyms → emits "CustomerName [Customer name, customername]".
+  Caused by user adding "customername" synonym to ABC_app.json (Bug C investigation). Fix: update test assertion.
 
 ### Feedback Endpoint Response Shape (6.1)
 - POST /v1/feedback returns {request_id, status, errors} only — no data/meta blocks.
@@ -1233,6 +1240,21 @@ middleware.py V1 — missing_fields inside errors[0]:
   and c.CustomerID = a_sub.CustomerID was added twice. Fixed: reverse lookup is now
   an else-branch fallback, runs only when forward lookup returns nothing. Surfaced by
   golden E2E test A1/A2 — duplicate AND line in the a_sub INNER JOIN ON clause.
+
+### Bug Fix (join_resolver.py V6 — deferred join)
+- Strict sequential for-loop raised NoJoinPathError immediately when a table could
+  not join the current anchor set, even when a valid path existed via a table that
+  appeared later in the LLM output (e.g. CustomerDemographics before Customer).
+  Fixed: replaced for-loop with a multi-pass deferred algorithm (Kahn-style topological
+  resolution). Each pass defers unjoinable tables to a pending list; they are retried
+  after each successful anchor. NoJoinPathError raised only after a full pass produces
+  zero progress — genuine no-path detection without false positives.
+  Extracted _try_join_instance helper (self-join / direct / junction bridge strategies).
+  All join logic remains fully schema-driven — zero hardcoding. No behaviour change for
+  tables that were already joinable in order (all existing tests unaffected).
+  35/35 join resolver tests pass; 797/798 suite passes (1 pre-existing failure
+  unrelated to this change — test_a5_column_synonyms_appear_in_brackets).
+  Bug report: bup-reports/BUG-2026-06-06-deferred-join-out-of-order-tables.md
 
 
 ### Bug Fixes — Story 5.9

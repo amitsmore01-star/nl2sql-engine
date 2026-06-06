@@ -1,9 +1,13 @@
 # tests/validator/test_join_resolver.py
 # V0 - Initial implementation
+# V1 - Story 4.5: Added class H -- Role stamping on columns and filters (H1, H2, H3)
 # V2 - Story 5.9: Added class I -- Single-instance hierarchy role stamping (JR-S1 to JR-S4)
 # V3 - Story 5.9 (cont.): Added JR-S5 to JR-S8 -- role stamping on columns/filters
 #      for single-instance hierarchy tables (fixes empty-alias ".AccName" bug)
-# V1 - Story 4.5: Added class H -- Role stamping on columns and filters (H1, H2, H3)
+# V4 - Bug fix (deferred join): Added class J (TestDeferredJoin) -- 8 tests.
+#      J1-J4 test multi-pass deferred resolution and true no-path detection.
+#      J5-J8 are regression guards confirming direct join, ordered join, self-join,
+#      and junction bridge all still produce identical output after the algorithm change.
 #
 # Test scenarios:
 # A -- Single table (no join needed)
@@ -564,3 +568,184 @@ class TestSingleInstanceHierarchy:
         col = result.resolved_columns[0]
         # role key is present (stamped) but None — consistent with table-level behaviour
         assert col.get("role") is None
+
+
+# ---------------------------------------------------------------------------
+# J -- Deferred join (multi-pass algorithm)  [V4 Bug fix]
+# ---------------------------------------------------------------------------
+
+class TestDeferredJoin:
+    """
+    Tests for the multi-pass deferred join algorithm introduced in V6 of
+    join_resolver.py.
+
+    Background: the old strict for-loop raised NoJoinPathError immediately when
+    a table could not join the current anchor set, even if it would have been
+    joinable once another table was anchored first. The new algorithm defers such
+    tables to a pending list and retries after each successful anchor — matching
+    the industry-standard Kahn topological resolution pattern.
+
+    J1-J2: The deferred scenario — table order the LLM may return.
+    J3-J4: True no-path scenarios — error must still be raised correctly.
+    J5-J8: Regression guards — existing join patterns must be unaffected.
+    """
+
+    def test_J1_deferred_cd_before_customer(self, abc_schema_repo, capturing_logger):
+        """
+        J1: [Acc, CustomerDemographics, Customer]
+        CustomerDemographics has no direct path to Acc, so it is deferred in
+        pass 1. Customer joins Acc in pass 1. CD then joins Customer in pass 2.
+        Previously raised NoJoinPathError — must now succeed with 2 joins.
+        """
+        ctx = _make_context([
+            {"table": "Major.Acc",                  "source": "acc"},
+            {"table": "Major.CustomerDemographics", "source": "customer name"},
+            {"table": "Major.Customer",             "source": "customer"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        assert len(result.resolved_joins) == 2
+
+        join_tables = [j["table_name"] for j in result.resolved_joins]
+        assert "Major.Customer" in join_tables
+        assert "Major.CustomerDemographics" in join_tables
+
+        # CustomerDemographics must join via Customer (CustomerID), not directly to Acc
+        cd_join = next(j for j in result.resolved_joins
+                       if j["table_name"] == "Major.CustomerDemographics")
+        all_sides = [c["left"] for c in cd_join["on_conditions"]] + \
+                    [c["right"] for c in cd_join["on_conditions"]]
+        assert any("CustomerID" in s for s in all_sides)
+
+    def test_J2_full_deferred_query_four_tables(self, abc_schema_repo, capturing_logger):
+        """
+        J2: [Acc, CustomerDemographics, Customer, EnrollPlatformIndicator]
+        CD deferred in pass 1; Customer and EPI join Acc in pass 1.
+        CD joins Customer in pass 2. All 4 tables resolved with 3 joins.
+        """
+        ctx = _make_context([
+            {"table": "Major.Acc",                       "source": "acc"},
+            {"table": "Major.CustomerDemographics",      "source": "customer name"},
+            {"table": "Major.Customer",                  "source": "customer"},
+            {"table": "Config.EnrollPlatformIndicator",  "source": "platform"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        assert len(result.resolved_joins) == 3
+
+        join_tables = [j["table_name"] for j in result.resolved_joins]
+        assert "Major.Customer" in join_tables
+        assert "Major.CustomerDemographics" in join_tables
+        assert "Config.EnrollPlatformIndicator" in join_tables
+
+    def test_J3_genuine_no_path_raises_error(self, abc_schema_repo, capturing_logger):
+        """
+        J3: [Acc, Package] — Package has no relationship to Acc and no junction bridge.
+        After one full pass with zero progress, NoJoinPathError must be raised.
+        """
+        ctx = _make_context([
+            {"table": "Major.Acc",     "source": "acc"},
+            {"table": "Major.Package", "source": "package"},
+        ])
+        with pytest.raises(NoJoinPathError) as exc_info:
+            run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert exc_info.value.code == "NO_JOIN_PATH"
+
+    def test_J4_both_tables_deferred_no_progress(self, abc_schema_repo, capturing_logger):
+        """
+        J4: [CustomerDemographics, EnrollPlatformIndicator]
+        CD connects only to Customer; EPI connects only to Acc.
+        Neither can join the other. Zero progress on first pass → NoJoinPathError.
+        """
+        ctx = _make_context([
+            {"table": "Major.CustomerDemographics",     "source": "customer name"},
+            {"table": "Config.EnrollPlatformIndicator", "source": "platform"},
+        ])
+        with pytest.raises(NoJoinPathError) as exc_info:
+            run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert exc_info.value.code == "NO_JOIN_PATH"
+
+    def test_J5_regression_direct_join_unchanged(self, abc_schema_repo, capturing_logger):
+        """
+        J5: Regression — [Customer, Acc] direct join still resolves in one pass.
+        """
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc",      "source": "acc"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        assert len(result.resolved_joins) == 1
+        assert result.resolved_joins[0]["table_name"] == "Major.Acc"
+
+    def test_J6_regression_ordered_three_tables_unchanged(self, abc_schema_repo, capturing_logger):
+        """
+        J6: Regression — [Customer, CustomerDemographics, Acc] all joinable in order.
+        Must still produce 2 joins in one pass (no deferral needed).
+        """
+        ctx = _make_context([
+            {"table": "Major.Customer",             "source": "customer"},
+            {"table": "Major.CustomerDemographics", "source": "customer name"},
+            {"table": "Major.Acc",                  "source": "acc"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        assert len(result.resolved_joins) == 2
+
+        join_tables = [j["table_name"] for j in result.resolved_joins]
+        assert "Major.CustomerDemographics" in join_tables
+        assert "Major.Acc" in join_tables
+
+    def test_J7_regression_self_join_conditions_unchanged(self, abc_schema_repo, capturing_logger):
+        """
+        J7: Regression — [Customer, Acc top, Acc sub] self-join.
+        a_sub must still receive both the primary AccID condition and the
+        additional CustomerID condition (Customer is anchored before a_sub).
+        """
+        ctx = _make_context([
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc",      "source": "top acc"},
+            {"table": "Major.Acc",      "source": "sub acc"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        assert len(result.resolved_joins) == 2
+
+        sub_join = next(
+            j for j in result.resolved_joins
+            if j["table_name"] == "Major.Acc" and j.get("alias") == "a_sub"
+        )
+        assert len(sub_join["on_conditions"]) >= 2
+
+        all_sides = (
+            [c["left"]  for c in sub_join["on_conditions"]] +
+            [c["right"] for c in sub_join["on_conditions"]]
+        )
+        assert any("AccID" in s for s in all_sides)
+        assert any("ParentAccID" in s for s in all_sides)
+        assert any("CustomerID" in s for s in all_sides)
+
+    def test_J8_regression_junction_bridge_unchanged(self, abc_schema_repo, capturing_logger):
+        """
+        J8: Regression — [Package, Plan] junction bridge via PackagePlan still works.
+        Two joins produced: Package→PackagePlan and PackagePlan→Plan.
+        """
+        ctx = _make_context([
+            {"table": "Major.Package", "source": "package"},
+            {"table": "Major.Plan",    "source": "plan"},
+        ])
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        assert len(result.resolved_joins) == 2
+
+        join_tables = [j["table_name"] for j in result.resolved_joins]
+        assert "Major.PackagePlan" in join_tables
+        assert "Major.Plan" in join_tables

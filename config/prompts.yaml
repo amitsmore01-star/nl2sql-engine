@@ -82,6 +82,7 @@ nl_to_structured_query:
       - Set value to null for IS NULL and IS NOT NULL operators
       - One filter object per condition — do not combine multiple conditions into one object
       - The user prompt may contain an app name (e.g. "in ABC"). Do not treat the app name as a filter value. App identification is handled separately — ignore it when building filters.
+      - When building a filter, look up which table has that column in the schema summary — do NOT infer the table from the column name's wording. CustomerName is on Major.CustomerDemographics, not on Major.Customer. Always check the schema before assigning a filter's table.
 
     source:
       - Every table, column, and filter object must have a source field

@@ -30,6 +30,15 @@
 #      and table_has_hierarchy). Pure refactor — identical logic, imported instead of
 #      defined locally. Lets table_column_validator reuse the SAME matching logic
 #      (single source of truth). No behaviour change; existing tests must pass unchanged.
+# V6 - Bug fix (deferred join): Replaced strict sequential for-loop in
+#      _resolve_joins_for_tables with a multi-pass deferred algorithm.
+#      When a table cannot join the current anchor set on the first attempt it is
+#      added to a pending list and retried after other tables are anchored.
+#      NoJoinPathError is raised only after a full pass produces zero progress —
+#      guarantees genuine no-path detection without false positives.
+#      Extracted _try_join_instance helper (self-join / direct / junction bridge).
+#      Fixes NoJoinPathError when LLM returns tables out of join order
+#      (e.g. CustomerDemographics before Customer). Fully schema-driven — zero hardcoding.
 #
 # Deterministic join resolver.
 # Resolves join paths between all tables proposed by the LLM, using only
@@ -215,6 +224,177 @@ def _find_all_direct_relationships(from_table, to_table_name: str) -> list:
 # Join path resolution
 # ---------------------------------------------------------------------------
 
+def _try_join_instance(
+    instance: dict,
+    anchored_instances: list,
+    table_lookup: dict,
+    app_schema,
+    table_name_counts: dict,
+) -> tuple[list, bool]:
+    """
+    Try all join strategies for one table instance against the current anchor set.
+    Returns (join_dicts, True) when a path is found; ([], False) when none succeed.
+
+    Strategies tried in order:
+      1. Self-join  — second+ instance of a table appearing more than once.
+                      Primary condition read from rel.type="self" in the schema.
+                      Additional conditions from currently-anchored tables.
+      2. Direct join — forward then reverse relationship lookup (schema-driven).
+      3. Junction bridge — auto-inserts an is_junction_table=True bridge table.
+
+    All column names come from rel.from_ / rel.to in the schema — zero hardcoding.
+
+    Raises:
+        NoJoinPathError: if t_name is absent from table_lookup (schema mismatch).
+    """
+    t_name = instance["table"]
+    t_alias = instance["alias"]
+    t_schema = table_lookup.get(t_name)
+
+    if t_schema is None:
+        raise NoJoinPathError(
+            message=f"Table '{t_name}' not found in schema during join resolution."
+        )
+
+    is_self_join_table = table_name_counts.get(t_name, 1) > 1
+    prior_same_table = any(a["table"] == t_name for a in anchored_instances)
+
+    # ------------------------------------------------------------------
+    # Self-join path: second+ instance of a repeated table
+    # ------------------------------------------------------------------
+    if is_self_join_table and prior_same_table:
+        on_conditions = []
+
+        # Primary: self relationship (columns read from rel.from_ / rel.to in schema)
+        for anchored in anchored_instances:
+            if anchored["table"] != t_name:
+                continue
+            a_alias = anchored["alias"]
+            for rel in t_schema.relationships:
+                if rel.type == "self" and rel.related_table == t_name:
+                    on_conditions.append({
+                        "left":  f"{a_alias}.{rel.to}",
+                        "right": f"{t_alias}.{rel.from_}",
+                    })
+                    break
+            if on_conditions:
+                break
+
+        # Additional: conditions from other currently-anchored tables
+        for anchored in anchored_instances:
+            if anchored["table"] == t_name:
+                continue
+            a_name = anchored["table"]
+            a_alias = anchored["alias"]
+            a_schema = table_lookup.get(a_name)
+            if a_schema is None:
+                continue
+
+            # Forward first — prevents duplicates when both schema sides define the relationship
+            forward = _find_all_direct_relationships(a_schema, t_name)
+            if forward:
+                for from_col, to_col in forward:
+                    on_conditions.append({
+                        "left":  f"{a_alias}.{from_col}",
+                        "right": f"{t_alias}.{to_col}",
+                    })
+            else:
+                for from_col, to_col in _find_all_direct_relationships(t_schema, a_name):
+                    on_conditions.append({
+                        "left":  f"{a_alias}.{to_col}",
+                        "right": f"{t_alias}.{from_col}",
+                    })
+
+        if on_conditions:
+            return [{
+                "join_type": "INNER JOIN",
+                "table_name": t_name,
+                "alias": t_alias,
+                "on_conditions": on_conditions,
+            }], True
+
+    # ------------------------------------------------------------------
+    # Normal join: direct relationship (forward or reverse)
+    # ------------------------------------------------------------------
+    for anchored in anchored_instances:
+        a_name = anchored["table"]
+        a_alias = anchored["alias"]
+        a_schema = table_lookup.get(a_name)
+
+        if a_schema is None:
+            continue
+
+        result = _find_direct_relationship(a_schema, t_name)
+        if result:
+            from_col, to_col = result
+            return [{
+                "join_type": "INNER JOIN",
+                "table_name": t_name,
+                "alias": t_alias,
+                "on_conditions": [
+                    {"left": f"{a_alias}.{from_col}", "right": f"{t_alias}.{to_col}"}
+                ],
+            }], True
+
+        result = _find_direct_relationship(t_schema, a_name)
+        if result:
+            from_col, to_col = result
+            return [{
+                "join_type": "INNER JOIN",
+                "table_name": t_name,
+                "alias": t_alias,
+                "on_conditions": [
+                    {"left": f"{a_alias}.{to_col}", "right": f"{t_alias}.{from_col}"}
+                ],
+            }], True
+
+    # ------------------------------------------------------------------
+    # Junction bridge fallback
+    # ------------------------------------------------------------------
+    for anchored in anchored_instances:
+        a_name = anchored["table"]
+        a_alias = anchored["alias"]
+
+        if t_name == a_name:
+            continue
+
+        junction = _find_junction_bridge(a_name, t_name, app_schema)
+        if junction is None:
+            continue
+
+        j_display = junction.display_name or junction.name.split(".")[-1]
+        j_alias = _build_alias_candidate(j_display)
+
+        j_from_anchored = _find_direct_relationship(
+            table_lookup[a_name], junction.name
+        )
+        j_to_new = _find_direct_relationship(junction, t_name)
+
+        if j_from_anchored and j_to_new:
+            fa_col, fa_to_col = j_from_anchored
+            jn_col, jn_to_col = j_to_new
+            return [
+                {
+                    "join_type": "INNER JOIN",
+                    "table_name": junction.name,
+                    "alias": j_alias,
+                    "on_conditions": [
+                        {"left": f"{a_alias}.{fa_col}", "right": f"{j_alias}.{fa_to_col}"}
+                    ],
+                },
+                {
+                    "join_type": "INNER JOIN",
+                    "table_name": t_name,
+                    "alias": t_alias,
+                    "on_conditions": [
+                        {"left": f"{j_alias}.{jn_col}", "right": f"{t_alias}.{jn_to_col}"}
+                    ],
+                },
+            ], True
+
+    return [], False
+
+
 def _resolve_joins_for_tables(
     table_instances: list,
     table_lookup: dict,
@@ -225,190 +405,57 @@ def _resolve_joins_for_tables(
     Resolve all join dicts for table instances that already have aliases.
     First instance is the FROM table (anchor).
 
-    Self-join handling:
-      - First instance of a repeated table joins normally to other tables.
-      - Second+ instances collect:
-          1. Primary: self relationship condition (e.g. a_top.AccID = a_sub.ParentAccID)
-          2. Additional: direct conditions from all other anchored tables
-             (e.g. c.CustomerID = a_sub.CustomerID)
-        All go into on_conditions list on a single join dict.
+    Multi-pass deferred algorithm (Kahn-style topological resolution):
+      Each pass iterates the pending list and calls _try_join_instance for each
+      entry against the current anchor set. Successful instances are anchored
+      immediately — they become available to later entries in the same pass.
+      If a complete pass produces zero new anchors (progress=False), the remaining
+      tables are genuinely unreachable → NoJoinPathError raised.
+
+    This replaces the V5 strict for-loop that raised immediately on the first
+    unjoinable table, causing false errors when the LLM returned tables in an
+    order where an intermediate table (e.g. CustomerDemographics) appeared before
+    the table it connects through (e.g. Customer).
+
+    Self-join note:
+      a_sub fires the self-join path as soon as a_top is in the anchor set.
+      Additional conditions from other anchored tables are collected at that moment.
+      This is identical to V5 behaviour for the same input ordering — no regression.
     """
     if len(table_instances) <= 1:
         return []
 
-    joins = []
+    joins: list = []
     anchored_instances = [table_instances[0]]
+    pending = list(table_instances[1:])
 
-    for instance in table_instances[1:]:
-        t_name = instance["table"]
-        t_alias = instance["alias"]
-        t_schema = table_lookup.get(t_name)
+    while pending:
+        progress = False
+        still_pending: list = []
 
-        if t_schema is None:
-            # TECH DEBT: log error before raise — Phase 1 cleanup
-            raise NoJoinPathError(
-                message=f"Table '{t_name}' not found in schema during join resolution."
+        for instance in pending:
+            join_dicts, joined = _try_join_instance(
+                instance, anchored_instances, table_lookup, app_schema, table_name_counts
             )
 
-        is_self_join_table = table_name_counts.get(t_name, 1) > 1
-        prior_same_table = any(a["table"] == t_name for a in anchored_instances)
-        joined = False
+            if joined:
+                joins.extend(join_dicts)
+                anchored_instances.append(instance)
+                progress = True
+            else:
+                still_pending.append(instance)
 
-        # ------------------------------------------------------------------
-        # Self-join path: second+ instance of a repeated table
-        # ------------------------------------------------------------------
-        if is_self_join_table and prior_same_table:
-            on_conditions = []
-
-            # Primary: self relationship (e.g. a_top.AccID = a_sub.ParentAccID)
-            for anchored in anchored_instances:
-                if anchored["table"] != t_name:
-                    continue
-                a_alias = anchored["alias"]
-                for rel in t_schema.relationships:
-                    if rel.type == "self" and rel.related_table == t_name:
-                        on_conditions.append({
-                            "left": f"{a_alias}.{rel.to}",
-                            "right": f"{t_alias}.{rel.from_}",
-                        })
-                        break
-                if on_conditions:
-                    break
-
-            # Additional: conditions from other anchored tables
-            for anchored in anchored_instances:
-                if anchored["table"] == t_name:
-                    continue
-                a_name = anchored["table"]
-                a_alias = anchored["alias"]
-                a_schema = table_lookup.get(a_name)
-                if a_schema is None:
-                    continue
-
-                # Try forward direction first: a_schema -> t_name
-                # e.g. Major.Customer.CustomerID -> Major.Acc.CustomerID
-                forward = _find_all_direct_relationships(a_schema, t_name)
-                if forward:
-                    for from_col, to_col in forward:
-                        on_conditions.append({
-                            "left": f"{a_alias}.{from_col}",
-                            "right": f"{t_alias}.{to_col}",
-                        })
-                else:
-                    # Fallback: reverse direction — only runs when no forward
-                    # relationship exists. Prevents duplicates when the same
-                    # relationship is defined on both sides of the schema.
-                    for from_col, to_col in _find_all_direct_relationships(t_schema, a_name):
-                        on_conditions.append({
-                            "left": f"{a_alias}.{to_col}",
-                            "right": f"{t_alias}.{from_col}",
-                        })
-
-            if on_conditions:
-                joins.append({
-                    "join_type": "INNER JOIN",
-                    "table_name": t_name,
-                    "alias": t_alias,
-                    "on_conditions": on_conditions,
-                })
-                joined = True
-
-        # ------------------------------------------------------------------
-        # Normal join: first instance of a table or non-self-join table
-        # ------------------------------------------------------------------
-        if not joined:
-            for anchored in anchored_instances:
-                a_name = anchored["table"]
-                a_alias = anchored["alias"]
-                a_schema = table_lookup.get(a_name)
-
-                if a_schema is None:
-                    continue
-
-                result = _find_direct_relationship(a_schema, t_name)
-                if result:
-                    from_col, to_col = result
-                    joins.append({
-                        "join_type": "INNER JOIN",
-                        "table_name": t_name,
-                        "alias": t_alias,
-                        "on_conditions": [
-                            {"left": f"{a_alias}.{from_col}", "right": f"{t_alias}.{to_col}"}
-                        ],
-                    })
-                    joined = True
-                    break
-
-                result = _find_direct_relationship(t_schema, a_name)
-                if result:
-                    from_col, to_col = result
-                    joins.append({
-                        "join_type": "INNER JOIN",
-                        "table_name": t_name,
-                        "alias": t_alias,
-                        "on_conditions": [
-                            {"left": f"{a_alias}.{to_col}", "right": f"{t_alias}.{from_col}"}
-                        ],
-                    })
-                    joined = True
-                    break
-
-        # ------------------------------------------------------------------
-        # Junction bridge fallback
-        # ------------------------------------------------------------------
-        if not joined:
-            for anchored in anchored_instances:
-                a_name = anchored["table"]
-                a_alias = anchored["alias"]
-
-                if t_name == a_name:
-                    continue
-
-                junction = _find_junction_bridge(a_name, t_name, app_schema)
-                if junction is None:
-                    continue
-
-                j_display = junction.display_name or junction.name.split(".")[-1]
-                j_alias = _build_alias_candidate(j_display)
-
-                j_from_anchored = _find_direct_relationship(
-                    table_lookup[a_name], junction.name
-                )
-                j_to_new = _find_direct_relationship(junction, t_name)
-
-                if j_from_anchored and j_to_new:
-                    fa_col, fa_to_col = j_from_anchored
-                    jn_col, jn_to_col = j_to_new
-                    joins.append({
-                        "join_type": "INNER JOIN",
-                        "table_name": junction.name,
-                        "alias": j_alias,
-                        "on_conditions": [
-                            {"left": f"{a_alias}.{fa_col}", "right": f"{j_alias}.{fa_to_col}"}
-                        ],
-                    })
-                    joins.append({
-                        "join_type": "INNER JOIN",
-                        "table_name": t_name,
-                        "alias": t_alias,
-                        "on_conditions": [
-                            {"left": f"{j_alias}.{jn_col}", "right": f"{t_alias}.{jn_to_col}"}
-                        ],
-                    })
-                    joined = True
-                    break
-
-        if not joined:
-            # TECH DEBT: log error before raise — Phase 1 cleanup
+        if not progress:
+            unresolved = still_pending[0]["table"]
             raise NoJoinPathError(
                 message=(
-                    f"No join path found between '{t_name}' and any of "
+                    f"No join path found between '{unresolved}' and any of "
                     f"{[i['table'] for i in anchored_instances]}. "
                     f"Check schema relationships."
                 )
             )
 
-        anchored_instances.append(instance)
+        pending = still_pending
 
     return joins
 
