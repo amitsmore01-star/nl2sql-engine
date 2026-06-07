@@ -55,9 +55,28 @@ cp .env.example .env        # Mac/Linux
 ## Run
 
 ### API
+
+Start the server:
 ```bash
 uvicorn src.api.app:app --reload --port 8000
 ```
+
+Submit a query:
+```bash
+curl -X POST http://localhost:8000/v1/query \
+  -H "X-API-Key: $CLIENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"nl_query": "give me customer name for customer CUST01 in Acme", "app_id": "Acme_app"}'
+```
+
+Common endpoints (full reference in [docs/ARCHITECTURE.md §10](docs/ARCHITECTURE.md#10-api-layer)):
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/v1/query` | `X-API-Key` | Submit an NL query, get validated SQL |
+| `GET` | `/v1/apps` | `X-API-Key` | List loaded app schemas |
+| `POST` | `/v1/feedback` | `X-API-Key` | Submit pass/fail feedback |
+| `GET` | `/health`, `/ready` | none | Liveness / readiness checks |
 
 ---
 
