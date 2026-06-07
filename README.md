@@ -62,13 +62,21 @@ uvicorn src.api.app:app --reload --port 8000
 ```
 
 Submit a query:
-```bash
-curl -X POST http://localhost:8000/v1/query \
-  -H "X-API-Key: $CLIENT_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"nl_query": "give me customer name for customer CUST01 in Acme", "app_id": "Acme_app"}'
 ```
-
+Bash (Git Bash):
+curl -s -X POST http://localhost:8000/v1/query \
+  -H "X-API-Key: client430232" \
+  -H "Content-Type: application/json" \
+  -d '{"nl_query": "give me customer name for customer CUST01 in Acme", "app_id": "Acme_app", "user_id": "user-123"}' \
+  | python -c "import sys,json; print(json.load(sys.stdin)['data']['sql'])"
+```
+```
+PowerShell:
+(Invoke-WebRequest -Uri "http://localhost:8000/v1/query" `
+  -Method POST `
+  -Headers @{ "X-API-Key" = "client430232"; "Content-Type" = "application/json" } `
+  -Body '{"nl_query": "give me customer name for customer CUST01 in Acme", "app_id": "Acme_app", "user_id": "user-123"}').Content | ConvertFrom-Json | Select-Object -ExpandProperty data | Select-Object -ExpandProperty sql
+```
 Common endpoints (full reference in [docs/ARCHITECTURE.md §10](docs/ARCHITECTURE.md#10-api-layer)):
 
 | Method | Path | Auth | Purpose |
