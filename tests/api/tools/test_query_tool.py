@@ -43,8 +43,8 @@ CLIENT_KEY  = "test-client-key-12345"
 WRONG_KEY   = "wrong-key"
 ENDPOINT    = "/v1/tools/query"
 
-# Golden NL query — matches ABC app, produces valid SQL end-to-end.
-GOLDEN_QUERY = "give me customer name for customer ASA in ABC"
+# Golden NL query — matches Acme app, produces valid SQL end-to-end.
+GOLDEN_QUERY = "give me customer name for customer CUST01 in Acme"
 
 # Valid simplified IR — what the mock LLM must return for the pipeline to succeed.
 # Copied from tests/pipeline/test_orchestrator.py — same IR, same schema references.
@@ -61,8 +61,8 @@ _GOLDEN_IR = json.dumps({
             "table": "Major.Customer",
             "column": "CustomerCID",
             "operator": "=",
-            "value": "ASA",
-            "source": "customer ASA",
+            "value": "CUST01",
+            "source": "customer CUST01",
         }
     ],
     "limit": None,
@@ -77,7 +77,7 @@ _GOLDEN_IR = json.dumps({
 
 def make_app():
     """
-    Create the FastAPI app using the real ABC schema directory.
+    Create the FastAPI app using the real Acme schema directory.
     The factory wires MockLLMProvider(responses=["mock_response"]) by default —
     a placeholder that is NOT valid IR JSON.
 
@@ -211,7 +211,7 @@ class TestIntentGuardBlocking:
         with TestClient(make_app(), raise_server_exceptions=False) as client:
             response = client.post(
                 ENDPOINT,
-                json=_minimal_context("DELETE all customers in ABC"),
+                json=_minimal_context("DELETE all customers in Acme"),
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
         assert response.status_code == 200
@@ -221,7 +221,7 @@ class TestIntentGuardBlocking:
         with TestClient(make_app(), raise_server_exceptions=False) as client:
             response = client.post(
                 ENDPOINT,
-                json=_minimal_context("DELETE all customers in ABC"),
+                json=_minimal_context("DELETE all customers in Acme"),
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
         data = response.json()
@@ -232,7 +232,7 @@ class TestIntentGuardBlocking:
         with TestClient(make_app(), raise_server_exceptions=False) as client:
             response = client.post(
                 ENDPOINT,
-                json=_minimal_context("DELETE all customers in ABC"),
+                json=_minimal_context("DELETE all customers in Acme"),
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
         data = response.json()
@@ -243,7 +243,7 @@ class TestIntentGuardBlocking:
         with TestClient(make_app(), raise_server_exceptions=False) as client:
             response = client.post(
                 ENDPOINT,
-                json=_minimal_context("DELETE all customers in ABC"),
+                json=_minimal_context("DELETE all customers in Acme"),
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
         data = response.json()
@@ -350,14 +350,14 @@ class TestSuccess:
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
         data = response.json()
-        assert data["context"]["app_id"] == "ABC_app"
+        assert data["context"]["app_id"] == "Acme_app"
 
     def test_D8_pre_set_app_id_accepted_by_pipeline(self):
         """
         app_id pre-set in context → pipeline uses it directly (Path 1 in App Identifier).
         sql still produced end-to-end.
         """
-        body = {**_minimal_context(), "app_id": "ABC_app"}
+        body = {**_minimal_context(), "app_id": "Acme_app"}
         with TestClient(make_app(), raise_server_exceptions=False) as client:
             client.app.state.llm_provider = MockLLMProvider(responses=[_GOLDEN_IR])
             response = client.post(

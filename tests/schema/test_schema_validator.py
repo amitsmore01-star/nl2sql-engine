@@ -18,8 +18,8 @@ def _make_schema(overrides: dict | None = None) -> AppSchema:
     top-level field overrides to produce invalid variants.
     """
     base = {
-        "appId": "ABC_app",
-        "app_name": "ABC",
+        "appId": "Acme_app",
+        "app_name": "Acme",
         "version": "1.0",
         "tables": [
             {
@@ -92,8 +92,8 @@ class TestSchemaValidator:
     def test_table_missing_name_raises(self):
         """Table with empty name raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -112,8 +112,8 @@ class TestSchemaValidator:
     def test_table_missing_columns_raises(self):
         """Table with empty columns list raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -133,8 +133,8 @@ class TestSchemaValidator:
     def test_non_junction_table_empty_synonyms_raises(self):
         """Non-junction table with empty synonyms[] raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -154,8 +154,8 @@ class TestSchemaValidator:
     def test_junction_table_empty_synonyms_passes(self):
         """Junction table with empty synonyms[] passes validation."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -182,8 +182,8 @@ class TestSchemaValidator:
     def test_junction_table_non_empty_synonyms_raises(self):
         """Junction table with non-empty synonyms[] raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -208,20 +208,20 @@ class TestSchemaValidator:
     # --- Scenario 11 ---
     def test_duplicate_app_id_across_schemas_raises(self):
         """Two schemas with same appId raises SchemaLoadError via validate_all."""
-        schema_a = _make_schema({"appId": "ABC_app"})
-        schema_b = _make_schema({"appId": "ABC_app", "app_name": "ABC Copy"})
+        schema_a = _make_schema({"appId": "Acme_app"})
+        schema_b = _make_schema({"appId": "Acme_app", "app_name": "Acme Copy"})
         with pytest.raises(SchemaLoadError) as exc_info:
             self.validator.validate_all([schema_a, schema_b])
         assert exc_info.value.code == "SCHEMA_LOAD_ERROR"
         assert "duplicate" in exc_info.value.message.lower()
-        assert "ABC_app" in exc_info.value.message
+        assert "Acme_app" in exc_info.value.message
 
     # --- Scenario 12 ---
     def test_duplicate_synonym_across_tables_raises(self):
         """Two non-junction tables sharing a synonym within same app raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -246,8 +246,8 @@ class TestSchemaValidator:
     def test_relationship_pointing_to_missing_table_raises(self):
         """Relationship referencing a non-existent table raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -275,8 +275,8 @@ class TestSchemaValidator:
     def test_duplicate_column_names_in_table_raises(self):
         """Table with two columns sharing the same name raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -300,8 +300,8 @@ class TestSchemaValidator:
     def test_column_missing_name_raises(self):
         """Column with empty name raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -320,8 +320,8 @@ class TestSchemaValidator:
     def test_empty_string_synonym_raises(self):
         """Synonym that is an empty string raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -341,8 +341,8 @@ class TestSchemaValidator:
     def test_whitespace_only_synonym_raises(self):
         """Synonym that is whitespace-only raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -362,8 +362,8 @@ class TestSchemaValidator:
     def test_duplicate_synonym_within_same_table_raises(self):
         """Same synonym appearing twice in the same table raises SchemaLoadError."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {
@@ -384,8 +384,8 @@ class TestSchemaValidator:
     def test_self_referencing_relationship_passes(self):
         """Self-referencing relationship (e.g. Major.Acc → Major.Acc) passes validation."""
         data = {
-            "appId": "ABC_app",
-            "app_name": "ABC",
+            "appId": "Acme_app",
+            "app_name": "Acme",
             "version": "1.0",
             "tables": [
                 {

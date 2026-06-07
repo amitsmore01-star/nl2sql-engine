@@ -8,7 +8,7 @@
 # Covers the full pipeline: App Identifier → Intent Guard → NL-to-IR Strategy
 #                           → Validator → SQL Builder.
 # Uses MockLLMProvider — zero real API calls.
-# Uses a real SchemaRepository loaded from schemas/ABC_app.json.
+# Uses a real SchemaRepository loaded from schemas/Acme_app.json.
 
 import json
 import pytest
@@ -29,7 +29,7 @@ from unittest.mock import MagicMock
 # ---------------------------------------------------------------------------
 
 # Minimal valid simplified IR — what the mock LLM returns.
-# References Major.Customer and Major.CustomerDemographics from ABC_app.json.
+# References Major.Customer and Major.CustomerDemographics from Acme_app.json.
 # The validator will resolve these tables and columns successfully.
 _GOLDEN_IR = json.dumps({
     "tables": [
@@ -44,8 +44,8 @@ _GOLDEN_IR = json.dumps({
             "table": "Major.Customer",
             "column": "CustomerCID",
             "operator": "=",
-            "value": "ASA",
-            "source": "customer ASA"
+            "value": "CUST01",
+            "source": "customer CUST01"
         }
     ],
     "limit": None,
@@ -56,7 +56,7 @@ _GOLDEN_IR = json.dumps({
 
 @pytest.fixture
 def schema_repo() -> SchemaRepository:
-    """Real SchemaRepository loaded from schemas/ABC_app.json."""
+    """Real SchemaRepository loaded from schemas/Acme_app.json."""
     repo = SchemaRepository()
     repo.load(Path("schemas"))
     return repo
@@ -104,7 +104,7 @@ class TestOrchestrator:
         B1: Valid query runs App Identifier → Intent Guard → NL-to-IR Strategy.
         All three stages complete — llm_output is populated.
         """
-        ctx = _make_context("give me customer name for customer ASA in ABC")
+        ctx = _make_context("give me customer name for customer CUST01 in Acme")
 
         result = run_pipeline(
             context=ctx,
@@ -127,7 +127,7 @@ class TestOrchestrator:
         """
         llm_that_must_not_be_called = MockLLMProvider(responses=["unused"])
 
-        ctx = _make_context("DELETE all customers in ABC")
+        ctx = _make_context("DELETE all customers in Acme")
 
         result = run_pipeline(
             context=ctx,
@@ -170,7 +170,7 @@ class TestOrchestrator:
         """
         B4: context.status = "success" after all stages complete cleanly.
         """
-        ctx = _make_context("give me customer name for customer ASA in ABC")
+        ctx = _make_context("give me customer name for customer CUST01 in Acme")
 
         result = run_pipeline(
             context=ctx,
@@ -188,7 +188,7 @@ class TestOrchestrator:
         """
         B5: context.app_id is populated by App Identifier during the pipeline.
         """
-        ctx = _make_context("give me customer name for customer ASA in ABC")
+        ctx = _make_context("give me customer name for customer CUST01 in Acme")
         assert ctx.app_id == ""
 
         result = run_pipeline(
@@ -199,7 +199,7 @@ class TestOrchestrator:
             settings=settings,
         )
 
-        assert result.app_id == "ABC_app"
+        assert result.app_id == "Acme_app"
 
     def test_B6_full_pipeline_produces_sql(
         self, schema_repo, settings, mock_llm, logger
@@ -208,7 +208,7 @@ class TestOrchestrator:
         B6: Full 5-stage pipeline runs — context.sql is populated with a non-empty string.
         This is the first test that confirms SQL comes out of the end-to-end pipeline.
         """
-        ctx = _make_context("give me customer name for customer ASA in ABC")
+        ctx = _make_context("give me customer name for customer CUST01 in Acme")
 
         result = run_pipeline(
             context=ctx,
@@ -228,7 +228,7 @@ class TestOrchestrator:
         """
         B7: context.status = "success" after all 5 stages complete (including SQL builder).
         """
-        ctx = _make_context("give me customer name for customer ASA in ABC")
+        ctx = _make_context("give me customer name for customer CUST01 in Acme")
 
         result = run_pipeline(
             context=ctx,
@@ -248,7 +248,7 @@ class TestOrchestrator:
         B8: Non-select query blocked at Intent Guard — context.sql stays None.
         Pipeline never reaches SQL Builder.
         """
-        ctx = _make_context("DELETE all customers in ABC")
+        ctx = _make_context("DELETE all customers in Acme")
 
         result = run_pipeline(
             context=ctx,

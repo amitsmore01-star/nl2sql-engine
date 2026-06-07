@@ -41,7 +41,7 @@ from src.core.models import QueryContext, ResolvedColumn, ResolvedJoin, Resolved
 def make_query_request(**overrides) -> dict:
     """Minimal valid QueryRequest dict. Pass overrides to change specific fields."""
     base = {
-        "nl_query": "give me customer name for customer ASA in ABC",
+        "nl_query": "give me customer name for customer CUST01 in Acme",
         "user_id": "test-user-001",
     }
     base.update(overrides)
@@ -66,9 +66,9 @@ def make_query_context_dict(**overrides) -> dict:
     base = {
         "request_id": "test-uuid-001",
         "user_id": "test-agent",
-        "app_id": "ABC_app",
+        "app_id": "Acme_app",
         "app_schema_version": "1.0",
-        "nl_query_original": "give me customer name for customer ASA in ABC",
+        "nl_query_original": "give me customer name for customer CUST01 in Acme",
         "nl_query_corrected": None,
         "llm_output": None,
         "resolved_tables": [],
@@ -91,7 +91,7 @@ def make_query_context_dict(**overrides) -> dict:
 def make_structured_query() -> StructuredQuery:
     """A minimal valid StructuredQuery for use in response tests."""
     return StructuredQuery(
-        app_id="ABC_app",
+        app_id="Acme_app",
         tables=[ResolvedTable(table_name="Major.Customer", alias="c")],
         columns=[ResolvedColumn(table_alias="c", column_name="CustomerCID", output_alias="CustomerCID")],
         joins=[],
@@ -103,7 +103,7 @@ def make_structured_query() -> StructuredQuery:
 def make_query_response_meta() -> dict:
     """Minimal valid QueryResponseMeta dict."""
     return {
-        "app_id": "ABC_app",
+        "app_id": "Acme_app",
         "app_schema_version": "1.0",
         "total_latency_ms": 310,
         "total_tokens_used": 2140,
@@ -120,14 +120,14 @@ class TestQueryRequest:
     def test_qreq1_valid_all_fields(self):
         """QReq-1: Valid body with all fields parses correctly."""
         data = make_query_request(
-            app_id="ABC_app",
+            app_id="Acme_app",
             request_id="my-custom-uuid",
         )
         req = QueryRequest.model_validate(data)
 
-        assert req.nl_query == "give me customer name for customer ASA in ABC"
+        assert req.nl_query == "give me customer name for customer CUST01 in Acme"
         assert req.user_id == "test-user-001"
-        assert req.app_id == "ABC_app"
+        assert req.app_id == "Acme_app"
         assert req.request_id == "my-custom-uuid"
 
     def test_qreq2_request_id_auto_generated(self):
@@ -162,7 +162,7 @@ class TestQueryRequest:
 
     def test_qreq5_user_id_missing_raises(self):
         """QReq-5: user_id missing → raises ValidationError."""
-        data = {"nl_query": "give me customers in ABC"}  # no user_id
+        data = {"nl_query": "give me customers in Acme"}  # no user_id
 
         with pytest.raises(ValidationError) as exc_info:
             QueryRequest.model_validate(data)
@@ -277,7 +277,7 @@ class TestToolRequest:
         req = ToolRequest.model_validate(data)
 
         assert req.request_id == "test-uuid-001"
-        assert req.nl_query_original == "give me customer name for customer ASA in ABC"
+        assert req.nl_query_original == "give me customer name for customer CUST01 in Acme"
 
     def test_treq2_missing_request_id_auto_generated(self):
         """TReq-2: request_id missing from context → auto-generated UUID, not an error.
@@ -310,13 +310,13 @@ class TestToolRequest:
     def test_treq4_spot_check_five_inherited_fields(self):
         """TReq-4: Spot-check 5 inherited QueryContext fields present after parsing."""
         data = make_query_context_dict(
-            app_id="ABC_app",
+            app_id="Acme_app",
             app_schema_version="1.0",
             status="pending",
         )
         req = ToolRequest.model_validate(data)
 
-        assert req.app_id == "ABC_app"
+        assert req.app_id == "Acme_app"
         assert req.app_schema_version == "1.0"
         assert req.status == "pending"
         assert req.llm_output is None # TODO: decide if we want to keep llm_output or just intent_output in QueryContext — for now, just check intent_output
@@ -429,7 +429,7 @@ class TestQueryResponse:
         # structured_query should be a dict in the serialised output
         sq_dict = serialised["data"]["structured_query"]
         assert isinstance(sq_dict, dict)
-        assert sq_dict["app_id"] == "ABC_app"
+        assert sq_dict["app_id"] == "Acme_app"
         assert len(sq_dict["tables"]) == 1
         assert sq_dict["tables"][0]["table_name"] == "Major.Customer"
         assert sq_dict["applied_rules"] == ["c.VersionTermDate IS NULL"]
@@ -457,7 +457,7 @@ class TestQueryResponse:
             "errors": [],
         })
 
-        assert response.meta.app_id == "ABC_app"
+        assert response.meta.app_id == "Acme_app"
         assert response.meta.app_schema_version == "1.0"
         assert response.meta.total_latency_ms == 310
         assert response.meta.total_tokens_used == 2140
@@ -499,7 +499,7 @@ class TestToolResponse:
     def test_tres1_valid_response_with_full_context(self):
         """TRes-1: Valid response with status='success' and full QueryContext under context."""
         context_data = make_query_context_dict(
-            app_id="ABC_app",
+            app_id="Acme_app",
             status="success",
             llm_output={"intent": "select", "entities": ["customer"]},
         )
@@ -520,7 +520,7 @@ class TestToolResponse:
         """TRes-2: context field spot-check app_id and intent_output accessible."""
         intent = {"intent": "select", "entities": ["customer"], "fields": ["customer name"]}
         context_data = make_query_context_dict(
-            app_id="ABC_app",
+            app_id="Acme_app",
             llm_output=intent,
         )
 
@@ -531,7 +531,7 @@ class TestToolResponse:
             "errors": [],
         })
 
-        assert response.context.app_id == "ABC_app"
+        assert response.context.app_id == "Acme_app"
         assert response.context.llm_output == intent  #TODO: decide if we want to keep llm_output or just intent_output in QueryContext — for now, just check intent_output
 
     def test_tres3_errors_list_with_one_error(self):

@@ -58,7 +58,7 @@ from src.validator.join_resolver import (
 def _make_context(tables: list, query: str = "test query") -> QueryContext:
     ctx = QueryContext(
         nl_query_original=query,
-        app_id="ABC_app",
+        app_id="Acme_app",
         app_schema_version="1.0",
     )
     ctx.resolved_tables = tables
@@ -235,7 +235,7 @@ class TestSelfJoinHierarchy:
                 {"table": "Major.Acc", "source": "top acc"},
                 {"table": "Major.Acc", "source": "sub acc"},
             ],
-            query="give me customer name, top acc and sub acc for customer ASA in ABC",
+            query="give me customer name, top acc and sub acc for customer CUST01 in Acme",
         )
         result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
 
@@ -311,7 +311,7 @@ class TestAliasGeneration:
     def test_F1_camel_case(self):
         """F1: CamelCase display_name -> initials extracted correctly."""
         assert _build_alias_candidate("CustomerDemographics") == "cd"
-        assert _build_alias_candidate("EnrollPlatformIndicator") == "epi"
+        assert _build_alias_candidate("OrderLineItem") == "oli"
         assert _build_alias_candidate("Customer") == "c"
         assert _build_alias_candidate("Acc") == "a"
 
@@ -371,7 +371,7 @@ class TestRoleStampingOnColumnsAndFilters:
                 {"table": "Major.Acc",      "source": "top acc"},
                 {"table": "Major.Acc",      "source": "sub acc"},
             ],
-            query="give me top acc name and sub acc name for customer ASA",
+            query="give me top acc name and sub acc name for customer CUST01",
         )
         ctx.resolved_columns = [
             {"table": "Major.Acc", "column": "AccName", "source": "top acc name"},
@@ -395,7 +395,7 @@ class TestRoleStampingOnColumnsAndFilters:
                 {"table": "Major.Acc",      "source": "top acc"},
                 {"table": "Major.Acc",      "source": "sub acc"},
             ],
-            query="give me top acc for customer ASA where top acc is TOP1",
+            query="give me top acc for customer CUST01 where top acc is TOP1",
         )
         ctx.resolved_filters = [
             {"table": "Major.Acc", "column": "AccCID", "operator": "=",
@@ -435,7 +435,7 @@ class TestSingleInstanceHierarchy:
     even when the table appears only once in resolved_tables (not a self-join).
 
     Before V3, role was only stamped on self-join tables (count > 1).
-    A query like "give me top acc for customer ASA" has one Major.Acc entry —
+    A query like "give me top acc for customer CUST01" has one Major.Acc entry —
     but rule_applicator needs role=top_Acc to apply AccLevelConfig=0 and
     ParentAccID IS NULL conditions.
     """
@@ -620,7 +620,7 @@ class TestDeferredJoin:
 
     def test_J2_full_deferred_query_four_tables(self, abc_schema_repo, capturing_logger):
         """
-        J2: [Acc, CustomerDemographics, Customer, EnrollPlatformIndicator]
+        J2: [Acc, CustomerDemographics, Customer, EPInd]
         CD deferred in pass 1; Customer and EPI join Acc in pass 1.
         CD joins Customer in pass 2. All 4 tables resolved with 3 joins.
         """
@@ -628,7 +628,7 @@ class TestDeferredJoin:
             {"table": "Major.Acc",                       "source": "acc"},
             {"table": "Major.CustomerDemographics",      "source": "customer name"},
             {"table": "Major.Customer",                  "source": "customer"},
-            {"table": "Config.EnrollPlatformIndicator",  "source": "platform"},
+            {"table": "Config.EPInd",  "source": "platform"},
         ])
         result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
 
@@ -638,7 +638,7 @@ class TestDeferredJoin:
         join_tables = [j["table_name"] for j in result.resolved_joins]
         assert "Major.Customer" in join_tables
         assert "Major.CustomerDemographics" in join_tables
-        assert "Config.EnrollPlatformIndicator" in join_tables
+        assert "Config.EPInd" in join_tables
 
     def test_J3_genuine_no_path_raises_error(self, abc_schema_repo, capturing_logger):
         """
@@ -656,13 +656,13 @@ class TestDeferredJoin:
 
     def test_J4_both_tables_deferred_no_progress(self, abc_schema_repo, capturing_logger):
         """
-        J4: [CustomerDemographics, EnrollPlatformIndicator]
+        J4: [CustomerDemographics, EPInd]
         CD connects only to Customer; EPI connects only to Acc.
         Neither can join the other. Zero progress on first pass → NoJoinPathError.
         """
         ctx = _make_context([
             {"table": "Major.CustomerDemographics",     "source": "customer name"},
-            {"table": "Config.EnrollPlatformIndicator", "source": "platform"},
+            {"table": "Config.EPInd", "source": "platform"},
         ])
         with pytest.raises(NoJoinPathError) as exc_info:
             run_join_resolver(ctx, abc_schema_repo, capturing_logger)

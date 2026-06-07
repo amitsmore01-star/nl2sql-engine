@@ -3,7 +3,7 @@
 #
 # Tests for src/validator/synonym_matching.py — the shared matcher module.
 #
-# Uses the real ABC_app.json schema via the abc_schema_repo fixture.
+# Uses the real Acme_app.json schema via the abc_schema_repo fixture.
 #
 # Scenarios:
 #   HM-1 — match_hierarchy_role("top acc", Acc)        -> "top_Acc"
@@ -29,12 +29,12 @@ from src.validator.synonym_matching import (
 # ---------------------------------------------------------------------------
 
 def _table(schema_repo, name: str):
-    """Fetch a TableSchema by name from the ABC_app schema."""
-    app_schema = schema_repo.get_schema("ABC_app")
+    """Fetch a TableSchema by name from the Acme_app schema."""
+    app_schema = schema_repo.get_schema("Acme_app")
     for t in app_schema.tables:
         if t.name == name:
             return t
-    raise AssertionError(f"Table {name} not found in ABC_app schema")
+    raise AssertionError(f"Table {name} not found in Acme_app schema")
 
 
 # ---------------------------------------------------------------------------

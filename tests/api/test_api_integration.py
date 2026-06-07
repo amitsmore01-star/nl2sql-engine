@@ -40,7 +40,7 @@ WRONG_KEY   = "wrong-key"
 
 # Minimal valid simplified IR — used wherever a LLM response is needed.
 # Major.Customer ↔ Major.CustomerDemographics have a direct relationship
-# in ABC_app.json — validator chain resolves a clean StructuredQuery.
+# in Acme_app.json — validator chain resolves a clean StructuredQuery.
 _GOLDEN_IR = json.dumps({
     "tables": [
         {"table": "Major.Customer", "source": "customer"},
@@ -82,7 +82,7 @@ _LLM_OUTPUT = {
 
 # Pre-built StructuredQuery for the sql-builder test (C4).
 _STRUCTURED_QUERY = {
-    "app_id": "ABC_app",
+    "app_id": "Acme_app",
     "top_rows": None,
     "tables": [
         {"table_name": "Major.Customer", "alias": "c"},
@@ -164,7 +164,7 @@ class TestUserFacingEndpoints:
             response = client.post(
                 "/v1/query",
                 json={
-                    "nl_query": "give me customers in ABC",
+                    "nl_query": "give me customers in Acme",
                     "user_id": "integration-test",
                 },
                 headers={"X-API-Key": CLIENT_KEY},
@@ -199,7 +199,7 @@ class TestUserFacingEndpoints:
     def test_b3_apps_returns_abc_app(self):
         """
         GET /v1/apps — loaded schema list returned.
-        CLIENT key accepted, ABC_app present with version.
+        CLIENT key accepted, Acme_app present with version.
         """
         with make_client() as client:
             response = client.get(
@@ -210,7 +210,7 @@ class TestUserFacingEndpoints:
         assert response.status_code == 200
         apps = response.json()["data"]["apps"]
         app_ids = [a["app_id"] for a in apps]
-        assert "ABC_app" in app_ids, "ABC_app must appear in /v1/apps response."
+        assert "Acme_app" in app_ids, "Acme_app must appear in /v1/apps response."
 
 
 # ---------------------------------------------------------------------------
@@ -224,19 +224,19 @@ class TestToolEndpoints:
     """
 
     def test_c1_app_identifier_populates_app_id(self):
-        """POST /v1/tools/app-identifier → 200, context.app_id = 'ABC_app'."""
+        """POST /v1/tools/app-identifier → 200, context.app_id = 'Acme_app'."""
         with make_client() as client:
             response = client.post(
                 "/v1/tools/app-identifier",
                 json={
-                    "nl_query_original": "give me customers in ABC",
+                    "nl_query_original": "give me customers in Acme",
                     "user_id": "integration-test",
                 },
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
 
         assert response.status_code == 200
-        assert response.json()["context"]["app_id"] == "ABC_app"
+        assert response.json()["context"]["app_id"] == "Acme_app"
 
     def test_c2_nl_to_ir_populates_llm_output(self):
         """POST /v1/tools/nl-to-ir → 200, context.llm_output populated."""
@@ -246,8 +246,8 @@ class TestToolEndpoints:
             response = client.post(
                 "/v1/tools/nl-to-ir",
                 json={
-                    "nl_query_original": "give me customers in ABC",
-                    "app_id": "ABC_app",
+                    "nl_query_original": "give me customers in Acme",
+                    "app_id": "Acme_app",
                     "app_schema_version": "1.0",
                     "user_id": "integration-test",
                 },
@@ -265,8 +265,8 @@ class TestToolEndpoints:
             response = client.post(
                 "/v1/tools/validator",
                 json={
-                    "nl_query_original": "give me customers in ABC",
-                    "app_id": "ABC_app",
+                    "nl_query_original": "give me customers in Acme",
+                    "app_id": "Acme_app",
                     "app_schema_version": "1.0",
                     "user_id": "integration-test",
                     "llm_output": _LLM_OUTPUT,
@@ -283,8 +283,8 @@ class TestToolEndpoints:
             response = client.post(
                 "/v1/tools/sql-builder",
                 json={
-                    "nl_query_original": "give me customers in ABC",
-                    "app_id": "ABC_app",
+                    "nl_query_original": "give me customers in Acme",
+                    "app_id": "Acme_app",
                     "app_schema_version": "1.0",
                     "user_id": "integration-test",
                     "structured_query": _STRUCTURED_QUERY,
@@ -305,7 +305,7 @@ class TestToolEndpoints:
             response = client.post(
                 "/v1/tools/query",
                 json={
-                    "nl_query_original": "give me customers in ABC",
+                    "nl_query_original": "give me customers in Acme",
                     "user_id": "integration-test",
                 },
                 headers={"X-API-Key": FOUNDRY_KEY},
@@ -351,7 +351,7 @@ class TestAuthKeySeparation:
             response = client.post(
                 "/v1/tools/app-identifier",
                 json={
-                    "nl_query_original": "give me customers in ABC",
+                    "nl_query_original": "give me customers in Acme",
                     "user_id": "test",
                 },
                 headers={"X-API-Key": CLIENT_KEY},
@@ -368,7 +368,7 @@ class TestAuthKeySeparation:
             response = client.post(
                 "/v1/query",
                 json={
-                    "nl_query": "give me customers in ABC",
+                    "nl_query": "give me customers in Acme",
                     "user_id": "test",
                 },
                 headers={"X-API-Key": FOUNDRY_KEY},
@@ -385,12 +385,12 @@ class TestAuthKeySeparation:
             # User-facing — no key
             r_user = client.post(
                 "/v1/query",
-                json={"nl_query": "give me customers in ABC", "user_id": "test"},
+                json={"nl_query": "give me customers in Acme", "user_id": "test"},
             )
             # Tool endpoint — no key
             r_tool = client.post(
                 "/v1/tools/app-identifier",
-                json={"nl_query_original": "give me customers in ABC", "user_id": "test"},
+                json={"nl_query_original": "give me customers in Acme", "user_id": "test"},
             )
 
         assert r_user.status_code == 401, "Missing key on /v1/query must return 401"
@@ -438,7 +438,7 @@ class TestErrorCodes:
             response = client.post(
                 "/v1/query",
                 json={
-                    "nl_query": "DELETE all customers in ABC",
+                    "nl_query": "DELETE all customers in Acme",
                     "user_id": "integration-test",
                 },
                 headers={"X-API-Key": CLIENT_KEY},
@@ -461,7 +461,7 @@ class TestErrorCodes:
             response = client.post(
                 "/v1/tools/nl-to-ir",
                 json={
-                    "nl_query_original": "give me customers in ABC",
+                    "nl_query_original": "give me customers in Acme",
                     "user_id": "integration-test",
                     # app_id defaults to "" — ContextValidator treats as missing
                 },
@@ -485,7 +485,7 @@ class TestErrorCodes:
             response = client.post(
                 "/v1/query",
                 json={
-                    "nl_query": "give me customers in ABC",
+                    "nl_query": "give me customers in Acme",
                     "user_id": "integration-test",
                 },
                 headers={"X-API-Key": CLIENT_KEY},

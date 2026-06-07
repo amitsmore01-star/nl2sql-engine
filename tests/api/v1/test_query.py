@@ -33,13 +33,13 @@ VALID_KEY = "test-client-key-12345"
 WRONG_KEY = "wrong-key"
 
 VALID_BODY = {
-    "nl_query": "give me customers in ABC",
+    "nl_query": "give me customers in Acme",
     "user_id": "test-user",
 }
 
 # Minimal valid simplified IR — two tables so validator can resolve a join.
 # Major.Customer and Major.CustomerDemographics have a direct relationship
-# in ABC_app.json — join resolver will produce a valid StructuredQuery.
+# in Acme_app.json — join resolver will produce a valid StructuredQuery.
 _GOLDEN_IR = json.dumps({
     "tables": [
         {"table": "Major.Customer", "source": "customer"},
@@ -65,7 +65,7 @@ _GOLDEN_IR = json.dumps({
 
 def make_client(schema_dir="schemas") -> TestClient:
     """
-    Create a TestClient using the real ABC schema directory.
+    Create a TestClient using the real Acme schema directory.
     Used for tests that do not need the NL-to-IR stage to run
     (auth tests, validation tests, business errors caught before LLM).
     """
@@ -145,7 +145,7 @@ class TestRequestValidation:
         with make_client() as client:
             response = client.post(
                 "/v1/query",
-                json={"nl_query": "give me customers in ABC"},
+                json={"nl_query": "give me customers in Acme"},
                 headers={"X-API-Key": VALID_KEY},
             )
         assert response.status_code == 422
@@ -218,19 +218,19 @@ class TestSuccess:
 
     def test_c3_meta_contains_app_id(self):
         """
-        C3: meta.app_id = "ABC_app" after successful pipeline run.
+        C3: meta.app_id = "Acme_app" after successful pipeline run.
         """
         app = create_app(schema_dir="schemas")
         with TestClient(app, raise_server_exceptions=False) as client:
             app.state.llm_provider = MockLLMProvider(responses=[_GOLDEN_IR])
             response = client.post(
                 "/v1/query",
-                json={"nl_query": "give me customer name in ABC office", "user_id": "test-user"},
+                json={"nl_query": "give me customer name in Acme office", "user_id": "test-user"},
                 headers={"X-API-Key": VALID_KEY},
             )
         assert response.status_code == 200
         data = response.json()
-        assert data["meta"]["app_id"] == "ABC_app"
+        assert data["meta"]["app_id"] == "Acme_app"
 
     def test_c4_request_id_echoed_in_response(self):
         """
@@ -317,7 +317,7 @@ class TestBusinessErrors:
         with make_client() as client:
             response = client.post(
                 "/v1/query",
-                json={"nl_query": "DELETE all customers in ABC", "user_id": "test-user"},
+                json={"nl_query": "DELETE all customers in Acme", "user_id": "test-user"},
                 headers={"X-API-Key": VALID_KEY},
             )
         assert response.status_code == 200

@@ -13,13 +13,13 @@ from src.schema.schema_models import (
 )
 
 # ---------------------------------------------------------------------------
-# Fixture — load ABC_app.json once for the whole module
+# Fixture — load Acme_app.json once for the whole module
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
 def abc_schema() -> AppSchema:
-    """Parse ABC_app.json into AppSchema — used by all tests."""
-    schema_path = Path("schemas/ABC_app.json")
+    """Parse Acme_app.json into AppSchema — used by all tests."""
+    schema_path = Path("schemas/Acme_app.json")
     raw = json.loads(schema_path.read_text(encoding="utf-8"))
     return AppSchema(**raw)
 
@@ -54,21 +54,21 @@ def package_plan_table(abc_schema: AppSchema) -> TableSchema:
 # ---------------------------------------------------------------------------
 
 class TestFullSchemaLoad:
-    """Group 1 — ABC_app.json parses into AppSchema correctly."""
+    """Group 1 — Acme_app.json parses into AppSchema correctly."""
 
     def test_1_1_schema_parses_without_error(self, abc_schema: AppSchema):
-        """1.1 — ABC_app.json parses without error into AppSchema."""
+        """1.1 — Acme_app.json parses without error into AppSchema."""
         assert abc_schema is not None
 
     def test_1_2_top_level_scalar_fields(self, abc_schema: AppSchema):
         """1.2 — appId, app_name, version correct."""
-        assert abc_schema.appId == "ABC_app"
-        assert abc_schema.app_name == "ABC"
+        assert abc_schema.appId == "Acme_app"
+        assert abc_schema.app_name == "Acme"
         assert abc_schema.version == "1.0"
 
     def test_1_3_app_synonyms(self, abc_schema: AppSchema):
         """1.3 — appSynonyms list loads correctly."""
-        assert abc_schema.appSynonyms == ["ABC", "ABC office", "ABC system"]
+        assert abc_schema.appSynonyms == ["Acme", "Acme office", "Acme system"]
 
     def test_1_4_database_type(self, abc_schema: AppSchema):
         """1.4 — database_type is SQL Server."""
@@ -110,7 +110,7 @@ class TestTableLevelFields:
             "Major.Customer",
             "Major.CustomerDemographics",
             "Major.Acc",
-            "Config.EnrollPlatformIndicator",
+            "Config.EPInd",
             "Major.Package",
             "Major.Plan",
         ]
@@ -343,12 +343,12 @@ class TestInvalidInput:
     def test_9_1_missing_app_id_raises(self):
         """9.1 — Missing appId raises ValidationError."""
         with pytest.raises(ValidationError):
-            AppSchema(app_name="ABC", version="1.0", tables=[])
+            AppSchema(app_name="Acme", version="1.0", tables=[])
 
     def test_9_2_missing_tables_raises(self):
         """9.2 — Missing tables raises ValidationError."""
         with pytest.raises(ValidationError):
-            AppSchema(appId="ABC_app", app_name="ABC", version="1.0")
+            AppSchema(appId="Acme_app", app_name="Acme", version="1.0")
 
     def test_9_3_table_missing_name_raises(self):
         """9.3 — Table missing name raises ValidationError."""

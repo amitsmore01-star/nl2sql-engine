@@ -3,10 +3,10 @@
 #
 # Test scenarios:
 #   Group A — Synonym matching (no explicit app_id)
-#     A1  Query contains "ABC" — matches ABC_app via appSynonyms
+#     A1  Query contains "Acme" — matches Acme_app via appSynonyms
 #     A2  Query contains "abc" (lowercase) — case-insensitive match
-#     A3  Query contains "ABC office" — multi-word synonym match
-#     A4  Query contains "ABC system" — another synonym
+#     A3  Query contains "Acme office" — multi-word synonym match
+#     A4  Query contains "Acme system" — another synonym
 #     A5  Query contains "xyzABC" — whole-word guard, no match
 #     A6  Query contains "ABCdef" — whole-word guard, no match
 #     A7  Query has no app reference — raises AppNotDeterminedError
@@ -93,18 +93,18 @@ def _make_context(nl_query: str, app_id: str = "") -> QueryContext:
 
 @pytest.fixture
 def abc_schema():
-    """The ABC_app schema with its real synonyms from ABC_app.json."""
+    """The Acme_app schema with its real synonyms from Acme_app.json."""
     return _make_schema(
-        app_id="ABC_app",
-        app_name="ABC",
-        synonyms=["ABC", "ABC office", "ABC system"],
+        app_id="Acme_app",
+        app_name="Acme",
+        synonyms=["Acme", "Acme office", "Acme system"],
         version="1.0",
     )
 
 
 @pytest.fixture
 def abc_repo(abc_schema):
-    """A repo containing only ABC_app."""
+    """A repo containing only Acme_app."""
     return _make_repo([abc_schema])
 
 
@@ -121,29 +121,29 @@ class TestSynonymMatching:
     """NL query synonym matching — no explicit app_id pre-set."""
 
     def test_A1_matches_uppercase_ABC(self, abc_repo, logger):
-        """A1 — 'ABC' in query matches ABC_app via appSynonyms."""
-        ctx = _make_context("give me customer name in ABC")
+        """A1 — 'Acme' in query matches Acme_app via appSynonyms."""
+        ctx = _make_context("give me customer name in Acme")
         result = run_app_identifier(ctx, abc_repo, logger)
-        assert result.app_id == "ABC_app"
+        assert result.app_id == "Acme_app"
         assert result.app_schema_version == "1.0"
 
     def test_A2_matches_lowercase_abc(self, abc_repo, logger):
-        """A2 — 'abc' (lowercase) matches due to case-insensitive matching."""
-        ctx = _make_context("give me customer name in abc")
+        """A2 — 'acme' (lowercase) matches due to case-insensitive matching."""
+        ctx = _make_context("give me customer name in acme")
         result = run_app_identifier(ctx, abc_repo, logger)
-        assert result.app_id == "ABC_app"
+        assert result.app_id == "Acme_app"
 
     def test_A3_matches_multiword_synonym_abc_office(self, abc_repo, logger):
-        """A3 — 'ABC office' as a multi-word synonym matches ABC_app."""
-        ctx = _make_context("give me customers in ABC office")
+        """A3 — 'Acme office' as a multi-word synonym matches Acme_app."""
+        ctx = _make_context("give me customers in Acme office")
         result = run_app_identifier(ctx, abc_repo, logger)
-        assert result.app_id == "ABC_app"
+        assert result.app_id == "Acme_app"
 
     def test_A4_matches_synonym_abc_system(self, abc_repo, logger):
-        """A4 — 'ABC system' synonym matches ABC_app."""
-        ctx = _make_context("show me data from ABC system")
+        """A4 — 'Acme system' synonym matches Acme_app."""
+        ctx = _make_context("show me data from Acme system")
         result = run_app_identifier(ctx, abc_repo, logger)
-        assert result.app_id == "ABC_app"
+        assert result.app_id == "Acme_app"
 
     def test_A5_no_match_when_embedded_xyzABC(self, abc_repo, logger):
         """A5 — 'xyzABC' is not a whole-word match — raises AppNotDeterminedError."""
@@ -173,9 +173,9 @@ class TestExplicitAppId:
 
     def test_B1_valid_explicit_app_id_populates_version(self, abc_repo, logger):
         """B1 — Valid explicit app_id skips matching and populates version."""
-        ctx = _make_context("give me customers", app_id="ABC_app")
+        ctx = _make_context("give me customers", app_id="Acme_app")
         result = run_app_identifier(ctx, abc_repo, logger)
-        assert result.app_id == "ABC_app"
+        assert result.app_id == "Acme_app"
         assert result.app_schema_version == "1.0"
 
     def test_B2_unknown_explicit_app_id_raises_error(self, abc_repo, logger):
@@ -186,9 +186,9 @@ class TestExplicitAppId:
 
     def test_B3_explicit_app_id_works_without_synonym_in_query(self, abc_repo, logger):
         """B3 — Explicit app_id works even when query mentions no synonym at all."""
-        ctx = _make_context("give me all customers", app_id="ABC_app")
+        ctx = _make_context("give me all customers", app_id="Acme_app")
         result = run_app_identifier(ctx, abc_repo, logger)
-        assert result.app_id == "ABC_app"
+        assert result.app_id == "Acme_app"
         assert result.app_schema_version == "1.0"
 
 
@@ -202,15 +202,15 @@ class TestMultipleAppMatch:
     def test_C1_multiple_apps_matched_raises_error(self, logger):
         """
         C1 — Query matches two different apps.
-        We create a second fake app whose synonym 'ABC' overlaps with ABC_app's synonym.
+        We create a second fake app whose synonym 'Acme' overlaps with Acme_app's synonym.
         Both apps match — MultipleAppsMatchedError raised.
         """
-        schema_a = _make_schema("ABC_app", "ABC", ["ABC", "ABC office"], "1.0")
-        schema_b = _make_schema("XYZ_app", "XYZ", ["ABC", "XYZ system"], "2.0")
-        # schema_b deliberately has "ABC" as a synonym to force a collision
+        schema_a = _make_schema("Acme_app", "Acme", ["Acme", "Acme office"], "1.0")
+        schema_b = _make_schema("XYZ_app", "XYZ", ["Acme", "XYZ system"], "2.0")
+        # schema_b deliberately has "Acme" as a synonym to force a collision
         repo = _make_repo([schema_a, schema_b])
 
-        ctx = _make_context("give me data from ABC")
+        ctx = _make_context("give me data from Acme")
         with pytest.raises(MultipleAppsMatchedError):
             run_app_identifier(ctx, repo, logger)
 
@@ -224,7 +224,7 @@ class TestLogging:
 
     def test_D1_app_detected_log_emitted_on_success(self, abc_repo, logger):
         """D1 — APP_DETECTED stage logged after successful synonym match."""
-        ctx = _make_context("give me customers in ABC")
+        ctx = _make_context("give me customers in Acme")
         run_app_identifier(ctx, abc_repo, logger)
 
         # logger.log() must have been called exactly once
@@ -236,29 +236,29 @@ class TestLogging:
 
     def test_D2_synonym_match_method_logged(self, abc_repo, logger):
         """D2 — match_method = 'synonym' when matched via synonym."""
-        ctx = _make_context("give me customers in ABC office")
+        ctx = _make_context("give me customers in Acme office")
         run_app_identifier(ctx, abc_repo, logger)
         entry = logger.log.call_args.args[0]
         assert entry.payload["match_method"] == "synonym"
 
     def test_D3_explicit_match_method_logged(self, abc_repo, logger):
         """D3 — match_method = 'explicit' when app_id was pre-set."""
-        ctx = _make_context("give me customers", app_id="ABC_app")
+        ctx = _make_context("give me customers", app_id="Acme_app")
         run_app_identifier(ctx, abc_repo, logger)
         entry = logger.log.call_args.args[0]
         assert entry.payload["match_method"] == "explicit"
 
     def test_D1b_log_payload_contains_app_id_and_version(self, abc_repo, logger):
         """D1b — Log payload contains app_id and schema_version."""
-        ctx = _make_context("give me customers in ABC")
+        ctx = _make_context("give me customers in Acme")
         run_app_identifier(ctx, abc_repo, logger)
         entry = logger.log.call_args.args[0]
-        assert entry.payload["app_id"] == "ABC_app"
+        assert entry.payload["app_id"] == "Acme_app"
         assert entry.payload["schema_version"] == "1.0"
 
     def test_D1c_latency_recorded_in_context(self, abc_repo, logger):
         """D1c — latency_ms['app_identifier'] is set after the call."""
-        ctx = _make_context("give me customers in ABC")
+        ctx = _make_context("give me customers in Acme")
         result = run_app_identifier(ctx, abc_repo, logger)
         assert "app_identifier" in result.latency_ms
         assert isinstance(result.latency_ms["app_identifier"], int)
@@ -280,11 +280,11 @@ class TestErrorCodes:
 
     def test_E2_multiple_apps_matched_error_code(self, logger):
         """E2 — MultipleAppsMatchedError.code == MULTIPLE_APPS_MATCHED."""
-        schema_a = _make_schema("ABC_app", "ABC", ["ABC"], "1.0")
-        schema_b = _make_schema("XYZ_app", "XYZ", ["ABC"], "2.0")
+        schema_a = _make_schema("Acme_app", "Acme", ["Acme"], "1.0")
+        schema_b = _make_schema("XYZ_app", "XYZ", ["Acme"], "2.0")
         repo = _make_repo([schema_a, schema_b])
 
-        ctx = _make_context("give me data from ABC")
+        ctx = _make_context("give me data from Acme")
         with pytest.raises(MultipleAppsMatchedError) as exc_info:
             run_app_identifier(ctx, repo, logger)
         assert exc_info.value.code == MULTIPLE_APPS_MATCHED
@@ -298,19 +298,19 @@ class TestIsWholeWordMatch:
     """Unit tests for the private matching helper — tests the regex logic directly."""
 
     def test_matches_exact_word(self):
-        assert _is_whole_word_match("ABC", "give me data in ABC") is True
+        assert _is_whole_word_match("Acme", "give me data in Acme") is True
 
     def test_case_insensitive(self):
-        assert _is_whole_word_match("ABC", "give me data in abc") is True
+        assert _is_whole_word_match("Acme", "give me data in acme") is True
 
     def test_no_match_when_embedded_prefix(self):
-        assert _is_whole_word_match("ABC", "xyzABC") is False
+        assert _is_whole_word_match("Acme", "xyzAcme") is False
 
     def test_no_match_when_embedded_suffix(self):
-        assert _is_whole_word_match("ABC", "ABCdef") is False
+        assert _is_whole_word_match("Acme", "Acmedef") is False
 
     def test_matches_multiword_synonym(self):
-        assert _is_whole_word_match("ABC office", "data from ABC office today") is True
+        assert _is_whole_word_match("Acme office", "data from Acme office today") is True
 
     def test_no_match_empty_query(self):
-        assert _is_whole_word_match("ABC", "") is False
+        assert _is_whole_word_match("Acme", "") is False

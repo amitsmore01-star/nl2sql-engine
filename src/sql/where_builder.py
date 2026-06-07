@@ -118,7 +118,7 @@ def build_where(structured_query: StructuredQuery) -> str:
         The WHERE clause as a multi-line string, e.g.:
 
             WHERE
-              c.CustomerCID              = 'ASA'
+              c.CustomerCID              = 'CUST01'
               AND c.VersionTermDate      IS NULL
               AND ISNULL(c.DeletedFlag, 0) = 0
               AND c.VoidedDate           IS NULL
@@ -158,7 +158,7 @@ def build_where(structured_query: StructuredQuery) -> str:
         if op in _VALUELESS_OPERATORS:
             remainder = op                      # e.g. "IS NULL"
         else:
-            remainder = f"{op} '{f.value}'"    # e.g. "= 'ASA'"
+            remainder = f"{op} '{f.value}'"    # e.g. "= 'CUST01'"
 
         conditions.append((connector, lhs, remainder))
 

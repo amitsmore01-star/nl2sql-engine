@@ -9,7 +9,7 @@
 For the query:
 
 > "give me top customername, customercid, top acc name, top acc key, sub acc name,
-> sub acc key for subaccount with Platform Indicator is CoreFI in ABC"
+> sub acc key for subaccount with PInd is PlatformA in Acme"
 
 The generated SQL contained four JOIN clauses for `Major.Acc` instead of two. The
 query returned a massive cross-product result instead of the expected two hierarchy

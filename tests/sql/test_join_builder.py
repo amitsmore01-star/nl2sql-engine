@@ -31,7 +31,7 @@ def _make_query(
 ) -> StructuredQuery:
     """Build a StructuredQuery with only the fields join_builder cares about."""
     return StructuredQuery(
-        app_id="ABC_app",
+        app_id="Acme_app",
         tables=tables,
         joins=joins,
     )

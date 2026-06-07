@@ -15,7 +15,7 @@
 #      Supports multi-condition joins (e.g. self-joins with 2+ ON conditions).
 # V5 - Story 5.3: Added connector: str = "AND" to ResolvedFilter.
 #      Defaults to "AND" so all existing callers are unaffected.
-#      Allows OR conditions in WHERE clause (e.g. CustomerCID = 'ASA' OR CustomerCID = 'XYZ').
+#      Allows OR conditions in WHERE clause (e.g. CustomerCID = 'CUST01' OR CustomerCID = 'XYZ').
 #      build_where() reads this field to emit AND or OR between filter conditions.
 #
 # Shared Pydantic models used across the entire nl2sql-engine pipeline.
@@ -129,7 +129,7 @@ class ResolvedFilter(BaseModel):
             table_alias="c",
             column_name="CustomerCID",
             operator="=",
-            value="ASA",
+            value="CUST01",
             connector="AND"
         )
 
@@ -154,7 +154,7 @@ class ResolvedFilter(BaseModel):
     table_alias: str          # Alias of the table e.g. "c"
     column_name: str          # Column to filter on e.g. "CustomerCID"
     operator: str             # SQL operator e.g. "=", ">", "LIKE", "IS NULL", "IS NOT NULL"
-    value: str = ""           # Filter value e.g. "ASA". Ignored for IS NULL / IS NOT NULL.
+    value: str = ""           # Filter value e.g. "CUST01". Ignored for IS NULL / IS NOT NULL.
     connector: str = "AND"    # How this condition joins to the previous one: "AND" | "OR"
                               # The first filter in the list never emits a connector.
 
@@ -271,7 +271,7 @@ class QueryContext(BaseModel):
     resolved_filters: list[dict[str, Any]] = Field(default_factory=list)
     # Validated filter entries from llm_output.filters.
     # Each entry starts as: {"table": "Major.Customer", "column": "CustomerCID",
-    #                         "operator": "=", "value": "ASA", "source": "..."}
+    #                         "operator": "=", "value": "CUST01", "source": "..."}
     # Join resolver V1 stamps "role" on entries for self-join tables.
     # Changed from list[str] in V2 — rule applicator needs full dict in Story 4.4.
 

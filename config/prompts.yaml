@@ -98,7 +98,7 @@ nl_to_structured_query:
       - Use operator "=" for equality, "LIKE" for partial matches, "IS NULL" / "IS NOT NULL" for null checks
       - Set value to null for IS NULL and IS NOT NULL operators
       - One filter object per condition — do not combine multiple conditions into one object
-      - The user prompt may contain an app name (e.g. "in ABC"). Do not treat the app name as a filter value. App identification is handled separately — ignore it when building filters.
+      - The user prompt may contain an app name (e.g. "in Acme"). Do not treat the app name as a filter value. App identification is handled separately — ignore it when building filters.
       - When building a filter, look up which table has that column in the schema summary — do NOT infer the table from the column name's wording. CustomerName is on Major.CustomerDemographics, not on Major.Customer. Always check the schema before assigning a filter's table.
 
     source:
@@ -151,7 +151,7 @@ nl_to_structured_query:
           CustomerID
           AccLevelConfig
           ParentAccID
-      query: "give me topaccount name for customer ASA in ABC"
+      query: "give me topaccount name for customer CUST01 in Acme"
       correct: |
         {
           "tables": [],
@@ -186,7 +186,7 @@ nl_to_structured_query:
         table: Major.CustomerDemographics [Customer demographics, demographics]
           CustomerID
           CustomerName [Customer name, customername]
-      query: "give me customer name for customer ASA in ABC"
+      query: "give me customer name for customer CUST01 in Acme"
       correct: |
         {
           "tables": [
@@ -197,7 +197,7 @@ nl_to_structured_query:
             {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"}
           ],
           "filters": [
-            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "CUST01", "source": "customer CUST01"}
           ],
           "limit": null,
           "aggregation": null,
@@ -215,7 +215,7 @@ nl_to_structured_query:
             {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"}
           ],
           "filters": [
-            {"table": "Major.Customer", "column": "CustomerName", "operator": "=", "value": "ASA", "source": "customer ASA"}
+            {"table": "Major.Customer", "column": "CustomerName", "operator": "=", "value": "CUST01", "source": "customer CUST01"}
           ],
           "limit": null,
           "aggregation": null,
@@ -227,7 +227,7 @@ nl_to_structured_query:
         The filter references CustomerName on Major.Customer, but CustomerName does not
         exist on Major.Customer — it lives on Major.CustomerDemographics. Always look up
         which table owns a column in the schema summary before assigning the filter's
-        "table" field. The user phrase "customer ASA" means filter by CustomerCID on
+        "table" field. The user phrase "customer CUST01" means filter by CustomerCID on
         Major.Customer (the identifier for that table), not by CustomerName.
 
     column_table_exact_match:
@@ -243,7 +243,7 @@ nl_to_structured_query:
           AccName [Acc name]
           CustomerID
           ParentAccID
-      query: "give me top customername and top acc name for customer ASA in ABC"
+      query: "give me top customername and top acc name for customer CUST01 in Acme"
       correct: |
         {
           "tables": [
@@ -256,7 +256,7 @@ nl_to_structured_query:
             {"table": "Major.Acc", "column": "AccName", "source": "top acc name"}
           ],
           "filters": [
-            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "CUST01", "source": "customer CUST01"}
           ],
           "limit": null,
           "aggregation": null,
@@ -275,7 +275,7 @@ nl_to_structured_query:
             {"table": "Major.Acc", "column": "AccName", "source": "top acc name"}
           ],
           "filters": [
-            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "CUST01", "source": "customer CUST01"}
           ],
           "limit": null,
           "aggregation": null,
@@ -302,7 +302,7 @@ nl_to_structured_query:
         table: Major.CustomerDemographics [customer demographics, demographics]
           CustomerID
           CustomerName [Customer name]
-      query: "give all company in ABC"
+      query: "give all company in Acme"
       correct: |
         {
           "tables": [],
@@ -342,7 +342,7 @@ nl_to_structured_query:
           CustomerID
           AccLevelConfig
           ParentAccID
-      query: "give me customer name, top acc and sub acc for customer ASA in ABC"
+      query: "give me customer name, top acc and sub acc for customer CUST01 in Acme"
       correct: |
         {
           "tables": [
@@ -355,7 +355,7 @@ nl_to_structured_query:
             {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"}
           ],
           "filters": [
-            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "CUST01", "source": "customer CUST01"}
           ],
           "limit": null,
           "aggregation": null,
@@ -373,7 +373,7 @@ nl_to_structured_query:
             {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"}
           ],
           "filters": [
-            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "CUST01", "source": "customer CUST01"}
           ],
           "limit": null,
           "aggregation": null,

@@ -39,7 +39,7 @@ ENDPOINT    = "/v1/tools/app-identifier"
 # ---------------------------------------------------------------------------
 
 def make_client() -> TestClient:
-    """Create a TestClient using the real ABC schema directory."""
+    """Create a TestClient using the real Acme schema directory."""
     app = create_app(schema_dir="schemas")
     return TestClient(app, raise_server_exceptions=False)
 
@@ -51,7 +51,7 @@ def _valid_context() -> dict:
     because this stage PRODUCES app_id, it does not require it.
     """
     return {
-        "nl_query_original": "show me all customers in ABC",
+        "nl_query_original": "show me all customers in Acme",
         "app_id": "",
         "app_schema_version": "",
     }
@@ -162,7 +162,7 @@ class TestIntentGuardBlocking:
     def test_C1_delete_query_returns_200(self):
         """HTTP 200 even for blocked queries — business error, not HTTP error."""
         body = _valid_context()
-        body["nl_query_original"] = "DELETE all customers in ABC"
+        body["nl_query_original"] = "DELETE all customers in Acme"
         with make_client() as client:
             response = client.post(
                 ENDPOINT,
@@ -174,7 +174,7 @@ class TestIntentGuardBlocking:
     def test_C2_delete_query_status_is_failed(self):
         """status is 'failed' when Intent Guard blocks the query."""
         body = _valid_context()
-        body["nl_query_original"] = "DELETE all customers in ABC"
+        body["nl_query_original"] = "DELETE all customers in Acme"
         with make_client() as client:
             response = client.post(
                 ENDPOINT,
@@ -187,7 +187,7 @@ class TestIntentGuardBlocking:
     def test_C3_delete_query_error_code_is_unsupported_intent(self):
         """Error code is UNSUPPORTED_INTENT when Intent Guard fires."""
         body = _valid_context()
-        body["nl_query_original"] = "DELETE all customers in ABC"
+        body["nl_query_original"] = "DELETE all customers in Acme"
         with make_client() as client:
             response = client.post(
                 ENDPOINT,
@@ -200,7 +200,7 @@ class TestIntentGuardBlocking:
     def test_C4_delete_query_app_id_not_populated(self):
         """app_id remains empty when Intent Guard blocks — identifier never ran."""
         body = _valid_context()
-        body["nl_query_original"] = "DELETE all customers in ABC"
+        body["nl_query_original"] = "DELETE all customers in Acme"
         with make_client() as client:
             response = client.post(
                 ENDPOINT,
@@ -213,11 +213,11 @@ class TestIntentGuardBlocking:
 
 # ---------------------------------------------------------------------------
 # Group D — Success path
-# Valid query with ABC synonym → app_id and app_schema_version populated.
+# Valid query with Acme synonym → app_id and app_schema_version populated.
 # ---------------------------------------------------------------------------
 
 class TestSuccess:
-    """Happy path — query matches ABC app via synonym."""
+    """Happy path — query matches Acme app via synonym."""
 
     def test_D1_valid_query_returns_200(self):
         """HTTP 200 returned for a valid query that matches a known app."""
@@ -238,7 +238,7 @@ class TestSuccess:
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
         data = response.json()
-        assert data["context"]["app_id"] == "ABC_app"
+        assert data["context"]["app_id"] == "Acme_app"
 
     def test_D3_valid_query_populates_app_schema_version(self):
         """context.app_schema_version is populated on success."""
@@ -347,7 +347,7 @@ class TestExplicitAppId:
     def test_F1_explicit_app_id_returns_200(self):
         """HTTP 200 when app_id is pre-set to a valid known app."""
         body = _valid_context()
-        body["app_id"] = "ABC_app"
+        body["app_id"] = "Acme_app"
         with make_client() as client:
             response = client.post(
                 ENDPOINT,
@@ -359,7 +359,7 @@ class TestExplicitAppId:
     def test_F2_explicit_app_id_unchanged_in_response(self):
         """app_id is unchanged when pre-set to a valid value."""
         body = _valid_context()
-        body["app_id"] = "ABC_app"
+        body["app_id"] = "Acme_app"
         with make_client() as client:
             response = client.post(
                 ENDPOINT,
@@ -367,12 +367,12 @@ class TestExplicitAppId:
                 headers={"X-API-Key": FOUNDRY_KEY},
             )
         data = response.json()
-        assert data["context"]["app_id"] == "ABC_app"
+        assert data["context"]["app_id"] == "Acme_app"
 
     def test_F3_explicit_app_id_populates_version(self):
         """app_schema_version is populated even when app_id was pre-set."""
         body = _valid_context()
-        body["app_id"] = "ABC_app"
+        body["app_id"] = "Acme_app"
         with make_client() as client:
             response = client.post(
                 ENDPOINT,

@@ -32,7 +32,7 @@ def make_query(
 ) -> StructuredQuery:
     """Build a minimal StructuredQuery with only filters and applied_rules set."""
     return StructuredQuery(
-        app_id="ABC_app",
+        app_id="Acme_app",
         filters=filters or [],
         applied_rules=applied_rules or [],
     )
@@ -50,7 +50,7 @@ def test_single_filter_no_rules():
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
             )
         ]
     )
@@ -59,7 +59,7 @@ def test_single_filter_no_rules():
     assert result.startswith("WHERE\n")
     # First condition — no AND/OR prefix
     assert "  c.CustomerCID" in result
-    assert "= 'ASA'" in result
+    assert "= 'CUST01'" in result
     # Must NOT have a leading AND or OR on the first line
     lines = result.splitlines()
     first_condition = lines[1]
@@ -100,7 +100,7 @@ def test_multiple_filters_all_and():
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
                 connector="AND",
             ),
             ResolvedFilter(
@@ -132,7 +132,7 @@ def test_multiple_filters_with_or():
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
                 connector="AND",
             ),
             ResolvedFilter(
@@ -166,7 +166,7 @@ def test_mixed_and_or_three_filters():
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
                 connector="AND",
             ),
             ResolvedFilter(
@@ -212,7 +212,7 @@ def test_filters_and_rules_combined():
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
             )
         ],
         applied_rules=["c.VersionTermDate IS NULL"],
@@ -320,7 +320,7 @@ def test_golden_where_clause():
     Full golden WHERE clause from architecture Section 9.3.
 
     Input:
-        filters:       c.CustomerCID = 'ASA'
+        filters:       c.CustomerCID = 'CUST01'
         applied_rules: c.VersionTermDate IS NULL
                        ISNULL(c.DeletedFlag, 0) = 0
                        c.VoidedDate IS NULL
@@ -331,7 +331,7 @@ def test_golden_where_clause():
 
     Expected (Section 9.3):
         WHERE
-          c.CustomerCID              = 'ASA'
+          c.CustomerCID              = 'CUST01'
           AND c.VersionTermDate      IS NULL
           AND ISNULL(c.DeletedFlag, 0) = 0
           AND c.VoidedDate           IS NULL
@@ -346,7 +346,7 @@ def test_golden_where_clause():
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
             )
         ],
         applied_rules=[
@@ -370,7 +370,7 @@ def test_golden_where_clause():
 
     # First condition (filter) — no connector
     assert "c.CustomerCID" in lines[1]
-    assert "= 'ASA'" in lines[1]
+    assert "= 'CUST01'" in lines[1]
     assert not lines[1].strip().startswith("AND")
 
     # All rule lines — must start with AND

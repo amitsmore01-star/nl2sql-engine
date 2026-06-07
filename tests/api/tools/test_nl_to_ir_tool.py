@@ -66,9 +66,9 @@ _GOLDEN_IR = json.dumps({
 _VALID_CONTEXT = {
     "request_id": "test-req-001",
     "user_id": "test-agent",
-    "app_id": "ABC_app",
+    "app_id": "Acme_app",
     "app_schema_version": "1.0",
-    "nl_query_original": "give me customer name for customer ASA in ABC",
+    "nl_query_original": "give me customer name for customer CUST01 in Acme",
     "nl_query_corrected": None,
     "llm_output": None,
     "resolved_tables": [],
@@ -93,7 +93,7 @@ _VALID_CONTEXT = {
 
 def make_client() -> TestClient:
     """
-    Create a TestClient using the real ABC schema directory.
+    Create a TestClient using the real Acme schema directory.
     Used for auth, validation, and intent guard tests — no real LLM call needed.
     The default MockLLMProvider (from conftest LLM_PROVIDER=mock) is sufficient.
     """
@@ -246,7 +246,7 @@ class TestIntentGuard:
         Query containing DELETE → UNSUPPORTED_INTENT.
         HTTP 200 (business error), context.status=failed.
         """
-        body = {**_VALID_CONTEXT, "nl_query_original": "DELETE all customers in ABC"}
+        body = {**_VALID_CONTEXT, "nl_query_original": "DELETE all customers in Acme"}
         with make_client() as client:
             response = client.post(
                 "/v1/tools/nl-to-ir",
@@ -265,7 +265,7 @@ class TestIntentGuard:
         No LLM call is attempted — verified by using the default factory mock
         which would raise ValueError if complete() were called unexpectedly.
         """
-        body = {**_VALID_CONTEXT, "nl_query_original": "DROP TABLE customers in ABC"}
+        body = {**_VALID_CONTEXT, "nl_query_original": "DROP TABLE customers in Acme"}
         with make_client() as client:
             response = client.post(
                 "/v1/tools/nl-to-ir",

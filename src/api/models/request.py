@@ -43,8 +43,8 @@ class QueryRequest(BaseModel):
 
     Example:
         {
-            "nl_query": "give me customer name for customer ASA in ABC",
-            "app_id": "ABC_app",
+            "nl_query": "give me customer name for customer CUST01 in Acme",
+            "app_id": "Acme_app",
             "user_id": "user-123",
             "request_id": "optional-uuid"
         }

@@ -1,23 +1,23 @@
 [
   {
-    "user_input": "give me topaccount name for customer ASA",
-    "llm_response": "{\n  \"tables\": [\n    {\"table\": \"Major.Customer\", \"source\": \"customer\"},\n    {\"table\": \"Major.Acc\", \"source\": \"topaccount\"}\n  ],\n  \"columns\": [\n    {\"table\": \"Major.Acc\", \"column\": \"AccName\", \"source\": \"topaccount name\"}\n  ],\n  \"filters\": [\n    {\"table\": \"Major.Customer\", \"column\": \"CustomerCID\", \"operator\": \"=\", \"value\": \"ASA\", \"source\": \"customer ASA\"}\n  ],\n  \"limit\": null,\n  \"aggregation\": null,\n  \"sort\": []\n}"
+    "user_input": "give me topaccount name for customer CUST01",
+    "llm_response": "{\n  \"tables\": [\n    {\"table\": \"Major.Customer\", \"source\": \"customer\"},\n    {\"table\": \"Major.Acc\", \"source\": \"topaccount\"}\n  ],\n  \"columns\": [\n    {\"table\": \"Major.Acc\", \"column\": \"AccName\", \"source\": \"topaccount name\"}\n  ],\n  \"filters\": [\n    {\"table\": \"Major.Customer\", \"column\": \"CustomerCID\", \"operator\": \"=\", \"value\": \"CUST01\", \"source\": \"customer CUST01\"}\n  ],\n  \"limit\": null,\n  \"aggregation\": null,\n  \"sort\": []\n}"
   }, 
   {
     "user_input": "show account name and key for all customer",
     "llm_response": "{\n  \"tables\": [\n    {\n      \"table\": \"Major.Acc\",\n      \"source\": \"account\"\n    },\n    {\n      \"table\": \"Major.Customer\",\n      \"source\": \"customer\"\n    }\n  ],\n  \"columns\": [\n    {\n      \"table\": \"Major.Acc\",\n      \"column\": \"AccName\",\n      \"source\": \"account name\"\n    },\n    {\n      \"table\": \"Major.Acc\",\n      \"column\": \"AccKey\",\n      \"source\": \"key\"\n    }\n  ],\n  \"filters\": [],\n  \"limit\": null,\n  \"aggregation\": null,\n  \"sort\": []\n}"
   }, 
   {
-    "user_input": "give planname assoicated with packagekey 091222 in ABC",
+    "user_input": "give planname assoicated with packagekey 091222 in Acme",
     "llm_response": "{\n  \"tables\": [\n    { \"table\": \"Major.Package\", \"source\": \"packagekey 091222\" },\n    { \"table\": \"Major.Plan\", \"source\": \"planname\" }\n  ],\n  \"columns\": [\n    { \"table\": \"Major.Plan\", \"column\": \"PlanName\", \"source\": \"planname\" }\n  ],\n  \"filters\": [\n    { \"table\": \"Major.Package\", \"column\": \"PackageKey\", \"operator\": \"=\", \"value\": \"091222\", \"source\": \"packagekey 091222\" }\n  ],\n  \"limit\": null,\n  \"aggregation\": null,\n  \"sort\": [],\n  \"input_tokens\": 0,\n  \"output_tokens\": 0\n}"
   },
   {
-    "user_input": "give subaccount details of customerCID 38923 with enrollnmentplatform CoreFI  in ABC",
-    "llm_response": "{\n  \"tables\": [\n    { \"table\": \"Major.Customer\", \"source\": \"customerCID\" },\n    { \"table\": \"Major.Acc\", \"source\": \"subaccount details\" },\n    { \"table\": \"Config.EnrollPlatformIndicator\", \"source\": \"enrollnmentplatform\" }\n  ],\n  \"columns\": [],\n  \"filters\": [\n    { \"table\": \"Major.Customer\", \"column\": \"CustomerCID\", \"operator\": \"=\", \"value\": \"38923\", \"source\": \"customerCID 38923\" },\n    { \"table\": \"Config.EnrollPlatformIndicator\", \"column\": \"Name\", \"operator\": \"=\", \"value\": \"CoreFI\", \"source\": \"enrollnmentplatform CoreFI\" }\n  ],\n  \"limit\": null,\n  \"aggregation\": null,\n  \"sort\": [],\n  \"input_tokens\": 0,\n  \"output_tokens\": 0\n}"
+    "user_input": "give subaccount details of customerCID 38923 with enrollnmentplatform PlatformA  in Acme",
+    "llm_response": "{\n  \"tables\": [\n    { \"table\": \"Major.Customer\", \"source\": \"customerCID\" },\n    { \"table\": \"Major.Acc\", \"source\": \"subaccount details\" },\n    { \"table\": \"Config.EPInd\", \"source\": \"enrollnmentplatform\" }\n  ],\n  \"columns\": [],\n  \"filters\": [\n    { \"table\": \"Major.Customer\", \"column\": \"CustomerCID\", \"operator\": \"=\", \"value\": \"38923\", \"source\": \"customerCID 38923\" },\n    { \"table\": \"Config.EPInd\", \"column\": \"Name\", \"operator\": \"=\", \"value\": \"PlatformA\", \"source\": \"enrollnmentplatform PlatformA\" }\n  ],\n  \"limit\": null,\n  \"aggregation\": null,\n  \"sort\": [],\n  \"input_tokens\": 0,\n  \"output_tokens\": 0\n}"
   }
   ,
   {
-    "user_input": "give all clients  in ABC",
+    "user_input": "give all clients  in Acme",
     "llm_response": "{\n  \"tables\": [],\n  \"columns\": [],\n  \"filters\": [],\n  \"limit\": null,\n  \"aggregation\": null,\n  \"sort\": [],\n  \"input_tokens\": 5,\n  \"output_tokens\": 0\n}"
   }
 ]

@@ -97,11 +97,11 @@ Story 6.6 — Full API Integration Test
                                       Registered in both default and minimal example_sets.
 - config/mock_responses.json        ← NEW V0. Mock LLM responses for JSON mode.
                                       Each entry has user_input (exact match string) and llm_response (IR JSON string). First entry:
-                                      "give me topaccount name for customer ASA".
-                                    ← V1 (Story 5.8). Added app_id field to entries without "in ABC" (App Identifier needs explicit app_id when query has no app synonym). Added final_sql field to each entry — populated by scripts/generate_mock_sql.py, used by Part B data-driven E2E assertions.
+                                      "give me topaccount name for customer CUST01".
+                                    ← V1 (Story 5.8). Added app_id field to entries without "in Acme" (App Identifier needs explicit app_id when query has no app synonym). Added final_sql field to each entry — populated by scripts/generate_mock_sql.py, used by Part B data-driven E2E assertions.
 
 ### Schemas
-- schemas/ABC_app.json              ← Updated (Bug fix). Added fused synonym forms to Major.Acc:
+- schemas/Acme_app.json              ← Updated (Bug fix). Added fused synonym forms to Major.Acc:
                                       table-level synonyms: topacc, topaccs, subacc, subaccs.
                                       top_Acc hierarchy synonyms: topacc, topaccs.
                                       sub_Acc hierarchy synonyms: subacc, subaccs.
@@ -159,7 +159,7 @@ Story 6.6 — Full API Integration Test
                                       QueryContext.app_schema_version: str = ""  — same rule.
                                       QueryContext.nl_query_original: str  — required, no default.
                                       StructuredQuery.app_id: str  — required, no default.
-                                        Must pass app_id= when constructing: StructuredQuery(app_id="ABC_app")
+                                        Must pass app_id= when constructing: StructuredQuery(app_id="Acme_app")
                                     ← V1. Removed intent_output + mapping_output fields.
                                       Added single llm_output: Optional[dict[str, Any]] = None.
                                       Added total_latency_ms: int = 0 field.
@@ -222,7 +222,7 @@ Story 6.6 — Full API Integration Test
 - src/api/tools/context_validator.py  ← new in 2.5
                                         Design patterns: Strategy, Factory, Open/Closed,
                                         Single Responsibility
-                                        StageRequirements: ABC with stage_name + required_fields
+                                        StageRequirements: Acme with stage_name + required_fields
                                           abstract properties + @final validate() method.
                                           Subclasses cannot override validate logic.
                                         6 concrete subclasses (one per stage):
@@ -375,7 +375,7 @@ src/validator/synonym_matching.py         ← NEW V0 (Story 5.9, Bug #13/DD-4). 
 src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(context, schema_repo, logger).
                                             Applies active_record, versioning, hierarchy conditions with alias prefix. Suppress token check. Deduplication. Emits VALIDATION_RESULT log.
 
-- src/llm/base.py                   ← NEW V0. LLMProvider ABC.
+- src/llm/base.py                   ← NEW V0. LLMProvider Acme.
                                       Two abstract methods: complete() and provider_name().
                                       All providers are synchronous (def, not async def).
                                       Pipeline stages call complete() only — never know
@@ -411,17 +411,17 @@ src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(contex
                                        Error message updated to list all 5 valid providers.
 
 - src/llm/openai_provider.py        ← NEW V0. OpenAIProvider.
-                                      Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                      Implements LLMProvider Acme. Synchronous — httpx.Client.
                                       Model: gpt-4o-mini. Retry + exponential backoff.
                                       Raises ValueError at construction if openai_api_key missing.
                                     ← V1 (Story 5.9, Bug #10). Reads settings.llm.temperature, sends it in request body.
 
 - src/llm/azure_openai_provider.py  ← NEW V0. AzureOpenAIProvider.
-                                      Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                      Implements LLMProvider Acme. Synchronous — httpx.Client.
                                     ← V1 (Story 5.9, Bug #10). Sends temperature in request body.
 
 - src/llm/azure_foundry_provider.py  ← NEW V0. AzureFoundryProvider.
-                                       Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                       Implements LLMProvider Acme. Synchronous — httpx.Client.
                                        URL: {endpoint}/chat/completions (no deployment in URL).
                                        Model name sent in request body as "model" field.
                                        3 credentials: AZURE_FOUNDRY_ENDPOINT,
@@ -430,7 +430,7 @@ src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(contex
                                      ← V1 (Story 5.9, Bug #10). Sends temperature in request body.
 
 - src/llm/anthropic_provider.py     ← NEW V0. AnthropicProvider.
-                                      Implements LLMProvider ABC. Synchronous — httpx.Client.
+                                      Implements LLMProvider Acme. Synchronous — httpx.Client.
                                      ← V1 (Story 5.9, Bug #10). Sends temperature in request body.
 
 - src/pipeline/schema_summary.py    ← NEW V0. build_schema_summary(schema: AppSchema) -> str.
@@ -450,8 +450,8 @@ src/validator/rule_applicator.py          ← NEW V0. run_rule_applicator(contex
                                       Does not raise — always returns context. 
 
 - src/pipeline/strategies/__init__.py ← NEW V0. Story 3.5
-- src/pipeline/strategies/base.py     ← NEW V0. Story 3.5 NLToIRStrategy ABC. Two abstract methods: execute() and strategy_name().
-                                          Mirrors LLMProvider ABC pattern exactly.
+- src/pipeline/strategies/base.py     ← NEW V0. Story 3.5 NLToIRStrategy Acme. Two abstract methods: execute() and strategy_name().
+                                          Mirrors LLMProvider Acme pattern exactly.
 - src/pipeline/strategies/factory.py  ← NEW V0. NLToIRStrategyFactory. Lazy imports SingleCallStrategy (not yet built).
                                           Unknown strategy → UnknownStrategyError. registered_strategies() helper for health checks.
                                       ← V1. Registered SingleCallStrategy. Registry was empty in V0.
@@ -589,7 +589,7 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
 
 - tests/validator/test_app_identifier.py    ← new in 2.2
 - tests/validator/conftest.py               ← NEW V0. Fixtures: abc_schema_repo (session-scoped,
-                                                loads real ABC_app.json), capturing_logger
+                                                loads real Acme_app.json), capturing_logger
                                                 (in-memory CapturingLogger for log assertions),
                                                 test_logger (real StructuredLogger writing to
                                                 tmp_path — never touches project logs/).
@@ -633,7 +633,7 @@ src/sql/sql_builder.py          ← NEW V0. run_sql_builder(context, logger, set
                                       (StructuredLogger patched, LogEntry inspected).
 - tests/api/v1/test_apps.py         ← NEW V0 (Story 6.3). 12 tests:
                                       A1-A4 auth, B1-B4 success content
-                                      (ABC_app present, version 1.0, app_id+version
+                                      (Acme_app present, version 1.0, app_id+version
                                       per entry), C1-C3 response shape,
                                       D1 schema_repo=None → 500 INTERNAL_ERROR
                                       via global exception handler.
@@ -730,7 +730,7 @@ Full detail in architecture document v1.6 (Sections 2, 6, 7, 8, 10, 12, 13, 16).
 These bullets move to Key Decisions Made as each story completes.
 
 - QueryContext: intent_output + mapping_output removed → single llm_output field (Story 3.5)
-- NLToIRStrategy ABC + NLToIRStrategyFactory — Strategy pattern mirrors LLMProviderFactory (Story 3.5)
+- NLToIRStrategy Acme + NLToIRStrategyFactory — Strategy pattern mirrors LLMProviderFactory (Story 3.5)
 - UnknownStrategyError + UNKNOWN_STRATEGY error code added (Story 3.5)
 - context_validator.py refactored — SchemMapperRequirements deleted, IntentExtractorRequirements
   renamed to NLToIRRequirements, ValidatorRequirements updated to require llm_output (Story 3.5)
@@ -832,7 +832,7 @@ These bullets move to Key Decisions Made as each story completes.
 
 ### Context Validator (2.5)
 - Design patterns applied: Strategy, Factory, Open/Closed, Single Responsibility
-- StageRequirements ABC + @final validate() — subclasses define fields, never logic
+- StageRequirements Acme + @final validate() — subclasses define fields, never logic
 - 6 concrete subclasses — one per stage — see file list above for required fields
 - ContextValidator registry built once at init via _build_registry() static method
 - Adding a new stage = one new subclass + one registry entry. Zero other changes.
@@ -854,11 +854,11 @@ These bullets move to Key Decisions Made as each story completes.
 
 ### Logger Tech Debt (flagged 2.6)
 - StructuredLogger has no Strategy pattern — switching log destination requires a code change
-- Should be refactored to LogWriter ABC + factory + config key before Phase 2
+- Should be refactored to LogWriter Acme + factory + config key before Phase 2
 - Tracked as tech debt — not blocking Phase 1
 
 ### LLM Base & Factory (3.1)
-- LLMProvider is an ABC — cannot be instantiated directly
+- LLMProvider is an Acme — cannot be instantiated directly
 - All providers are synchronous — def not async def. uvicorn handles concurrency.
 - MockLLMProvider uses a responses list — call order determines which response returned.
 - Tests construct MockLLMProvider directly with specific responses.
@@ -904,7 +904,7 @@ These bullets move to Key Decisions Made as each story completes.
 - Output is deterministic — same input always produces same output.
 
 ### NL-to-IR Strategy Scaffold (3.5)
-- NLToIRStrategy ABC mirrors LLMProvider ABC exactly — same pattern, same rationale
+- NLToIRStrategy Acme mirrors LLMProvider Acme exactly — same pattern, same rationale
 - NLToIRStrategyFactory uses lazy imports for SingleCallStrategy — same pattern as LLMProviderFactory. Strategy files can be absent during    early stories without breaking imports.
 - Factory in this story has an empty registry until Story 3.6 adds SingleCallStrategy. registered_strategies() returns [] until then — this is correct and tested (B4).
 - _PatchedFactory test pattern used in test_factory.py — injects a stub strategy to test the factory mechanism without needing SingleCallStrategy to exist.
@@ -912,7 +912,7 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 - intent-extractor and schema-mapper stage names are gone — any agent sending those names will receive a ValueError (programming error, not a pipeline error).
 - total_latency_ms: int = 0 added to QueryContext in this story — was in the architecture doc but missing from V0 models.py.
 - QueryContext: intent_output + mapping_output removed → single llm_output field ✅
-- NLToIRStrategy ABC + NLToIRStrategyFactory — Strategy pattern mirrors LLMProviderFactory ✅
+- NLToIRStrategy Acme + NLToIRStrategyFactory — Strategy pattern mirrors LLMProviderFactory ✅
 - UnknownStrategyError + UNKNOWN_STRATEGY error code added ✅
 - context_validator.py refactored — SchemMapperRequirements deleted, IntentExtractorRequirements renamed to NLToIRRequirements, ValidatorRequirements updated to require llm_output ✅
 
@@ -1112,7 +1112,7 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 
 ### Golden E2E Test (5.8)
 - E2E suite split into three classes: Part A (exact SQL + log stage verification, must never fail), Part B (data-driven from mock_responses.json with final_sql), Diagnostic (print-only, no assertions, run with pytest -s).
-- New test cases need NO code change — add a mock_responses.json entry with user_input, llm_response, final_sql (and app_id if no "in ABC" in query).
+- New test cases need NO code change — add a mock_responses.json entry with user_input, llm_response, final_sql (and app_id if no "in Acme" in query).
 - Root tests/conftest.py required — tests/api/conftest.py scope is tests/api/** only.
   E2E lives at tests/ root and was returning 401 until root conftest added.
 - LOG_DIR must be set via monkeypatch BEFORE create_app() — load_settings() reads
@@ -1132,7 +1132,7 @@ context_validator.py now has exactly 5 stages: app-identifier, nl-to-ir, validat
 
 ### Known Issues / Deferred
 - Bug #14 (partial) — fused forms "topacc", "topaccs", "subacc", "subaccs" now added to
-  ABC_app.json as explicit synonyms (both table-level and hierarchy level). "subaccount" /
+  Acme_app.json as explicit synonyms (both table-level and hierarchy level). "subaccount" /
   "topaccount" still deferred — would require updating the negative_strict_synonym prompt
   example which currently treats them as negative examples.
 - Bug #16 — LLM omits or misroutes the filter table (drops Major.Customer, or forces the
@@ -1301,9 +1301,9 @@ middleware.py V1 — missing_fields inside errors[0]:
   21/21 structured_query_builder tests pass. E2E golden SQL updated to reflect new aliases.
   Full suite: 808 passed, 0 failed.
 
-### Bug Fix (schemas/ABC_app.json + prompts.yaml V3 — fused synonyms + CustomerName filter)
+### Bug Fix (schemas/Acme_app.json + prompts.yaml V3 — fused synonyms + CustomerName filter)
 - Added fused synonym forms topacc, topaccs, subacc, subaccs to Major.Acc table-level and
-  hierarchy level synonyms in ABC_app.json. Enables LLM to match fused-word user terms
+  hierarchy level synonyms in Acme_app.json. Enables LLM to match fused-word user terms
   to the correct hierarchy role without relying on whole-word multi-token matching.
 - Added customer_name_filter_table example to prompts.yaml V3. Demonstrates CustomerName
   lives on Major.CustomerDemographics, not Major.Customer — prevents LLM from assigning

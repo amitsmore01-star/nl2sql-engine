@@ -6,7 +6,7 @@
 #
 # What this function does:
 #   Reads context.llm_output.tables and context.llm_output.columns.
-#   Validates each against the real ABC_app.json schema.
+#   Validates each against the real Acme_app.json schema.
 #   Raises NoRelevantTablesError or NoRelevantColumnsError on any mismatch.
 #   On success, populates context.resolved_tables and context.resolved_columns
 #   with the full dicts (including source field) from llm_output.
@@ -18,7 +18,7 @@
 #   D — Column validation: failure path
 #   E — Stage ordering and logging
 #
-# Real ABC_app.json schema is used throughout — no mocking of schema data.
+# Real Acme_app.json schema is used throughout — no mocking of schema data.
 # StructuredLogger is built with real settings loaded from YAML + env vars.
 
 import pytest
@@ -35,11 +35,11 @@ from src.validator.table_column_validator import run_table_column_validator
 def make_context(tables: list[dict], columns: list[dict], filters: list[dict] = None) -> QueryContext:
     """
     Build a QueryContext with llm_output populated for the given tables + columns.
-    app_id points to the real ABC_app schema loaded in the fixture.
+    app_id points to the real Acme_app schema loaded in the fixture.
     """
     return QueryContext(
-        nl_query_original="give me customer name for customer ASA in ABC",
-        app_id="ABC_app",
+        nl_query_original="give me customer name for customer CUST01 in Acme",
+        app_id="Acme_app",
         app_schema_version="1.0",
         user_id="test-user",
         llm_output={
@@ -429,12 +429,12 @@ class TestStageOrderingAndLogging:
 class TestFilterValidation:
 
     def test_f1_valid_filter_passes_through(self, abc_schema_repo, capturing_logger):
-        """F1: A valid filter (Customer.CustomerCID = ASA) lands in resolved_filters."""
+        """F1: A valid filter (Customer.CustomerCID = CUST01) lands in resolved_filters."""
         tables = [{"table": "Major.Customer", "source": "customer"}]
         columns = [{"table": "Major.Customer", "column": "CustomerCID", "source": "customer id"}]
         filters = [{
             "table": "Major.Customer", "column": "CustomerCID",
-            "operator": "=", "value": "ASA", "source": "customer ASA",
+            "operator": "=", "value": "CUST01", "source": "customer CUST01",
         }]
         context = make_context(tables=tables, columns=columns, filters=filters)
 
@@ -444,7 +444,7 @@ class TestFilterValidation:
         f = result.resolved_filters[0]
         assert f["table"] == "Major.Customer"
         assert f["column"] == "CustomerCID"
-        assert f["value"] == "ASA"
+        assert f["value"] == "CUST01"
 
     def test_f2_filter_table_not_in_proposed_raises(self, abc_schema_repo, capturing_logger):
         """F2: Filter references a table not in proposed tables → NoRelevantColumnsError."""
@@ -496,7 +496,7 @@ class TestFilterValidation:
         ]
         filters = [{
             "table": "Major.Customer", "column": "CustomerCID",
-            "operator": "=", "value": "ASA", "source": "customer ASA",
+            "operator": "=", "value": "CUST01", "source": "customer CUST01",
         }]
         context = make_context(tables=tables, columns=columns, filters=filters)
 
@@ -511,7 +511,7 @@ class TestFilterValidation:
         columns = [{"table": "Major.Customer", "column": "CustomerCID", "source": "id"}]
         filters = [{
             "table": "Major.Customer", "column": "CustomerCID",
-            "operator": "=", "value": "ASA", "source": "customer ASA",
+            "operator": "=", "value": "CUST01", "source": "customer CUST01",
         }]
         context = make_context(tables=tables, columns=columns, filters=filters)
 

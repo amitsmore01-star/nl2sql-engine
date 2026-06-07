@@ -1,0 +1,220 @@
+{
+  "appId": "Acme_app",
+  "app_name": "Acme",
+  "appSynonyms": ["Acme", "Acme office", "Acme system"],
+  "description": "Customer, Acc, and Demographics Management",
+  "database_type": "SQL Server",
+  "version": "1.0",
+  "tables": [
+    {
+      "name": "Major.Customer",
+      "display_name": "Customer",
+      "schema": "Major",
+      "synonyms": ["Customer", "customer", "organization", "org"],
+      "description": "Versioned Customer organization records",
+      "identifier": "CustomerCID",
+      "versioning": {
+        "is_versioned": true,
+        "business_key": "CustomerCID",
+        "row_key": "CustomerID",
+        "version_key": "CustomerVersionKey",
+        "effective_date": "VersionEffDate",
+        "termination_date": "VersionTermDate",
+        "active_condition": "VersionTermDate IS NULL"
+      },
+      "business_rules": {
+        "active_record": [
+          "VersionTermDate IS NULL",
+          "ISNULL(DeletedFlag, 0) = 0",
+          "VoidedDate IS NULL"
+        ],
+        "exclude_record": [
+          "DeletedFlag = 1",
+          "VoidedDate IS NOT NULL"
+        ],
+        "latest_version": ["VersionTermDate IS NULL"]
+      },
+      "filter_control": {
+        "apply_when": ["no_modifier", "primary_table"],
+        "suppress_tokens": ["history", "historical", "trailing", "all versions", "include deleted", "include voided"],
+        "apply_tokens": ["active", "current", "latest"]
+      },
+      "columns": [
+        { "name": "CustomerID", "type": "INT", "key": "primary", "description": "Row-level identifier" },
+        { "name": "CustomerCID", "type": "VARCHAR(50)", "is_identifier": true, "synonyms": ["Customer id", "Customer cid"] },
+        { "name": "CustomerVersionKey", "type": "VARCHAR(20)" },
+        { "name": "CreatedFromCustomerID", "type": "INT", "key": "foreign", "references": { "table": "Major.Customer", "column": "CustomerID" }, "description": "Lineage pointer" },
+        { "name": "VersionNumber", "type": "INT" },
+        { "name": "VersionEffDate", "type": "DATETIME", "synonyms": ["version effective date"] },
+        { "name": "VersionTermDate", "type": "DATETIME", "synonyms": ["version termination date"] },
+        { "name": "EffDate", "type": "DATETIME", "synonyms": ["Customer effective date"] },
+        { "name": "TermDate", "type": "DATETIME", "synonyms": ["Customer termination date"] },
+        { "name": "VoidedDate", "type": "DATETIME" },
+        { "name": "DeletedFlag", "type": "BIT", "default_value": 0 },
+        { "name": "UserEditableFlag", "type": "BIT", "default_value": 0 }
+      ],
+      "relationships": [
+        { "related_table": "Major.CustomerDemographics", "from": "CustomerID", "to": "CustomerID", "type": "one-to-one" },
+        { "related_table": "Major.Acc", "from": "CustomerID", "to": "CustomerID", "type": "one-to-many" },
+        { "related_table": "Major.Customer", "from": "CreatedFromCustomerID", "to": "CustomerID", "type": "self" }
+      ],
+      "default_filters": [
+        "ISNULL(Major.Customer.DeletedFlag, 0) = 0",
+        "Major.Customer.VoidedDate IS NULL"
+      ]
+    },
+    {
+      "name": "Major.CustomerDemographics",
+      "display_name": "CustomerDemographics",
+      "schema": "Major",
+      "synonyms": ["Customer demographics", "demographics"],
+      "description": "Demographic and administrative Customer information",
+      "identifier": "CustomerName",
+      "columns": [
+        { "name": "CustomerDemographicsID", "type": "INT", "key": "primary" },
+        { "name": "CustomerID", "type": "INT", "key": "foreign", "references": { "table": "Major.Customer", "column": "CustomerID" } },
+        { "name": "CustomerName", "type": "VARCHAR(100)", "is_default_text": true, "synonyms": ["Customer name","customername"] },
+        { "name": "CustomerLegalName", "type": "VARCHAR(100)" }
+      ],
+      "relationships": [
+        { "related_table": "Major.Customer", "from": "CustomerID", "to": "CustomerID", "type": "one-to-one" }
+      ]
+    },
+    {
+      "name": "Major.Acc",
+      "display_name": "Acc",
+      "schema": "Major",
+      "synonyms": ["Acc", "Accs","top Acc", "sub Acc","Sub Account","top Account","topacc","topaccs","subacc","subaccs"],
+      "description": "Top-level and sub-Acc structures within a Customer",
+      "identifier": "AccKey",
+      "business_rules": {
+        "active_record": ["TermDate IS NULL"],
+        "hierarchy": {
+          "top_Acc": {
+            "condition": "AccLevelConfig = 0",
+            "parent_condition": "ParentAccID IS NULL",
+            "synonyms": [
+              "top", "top Acc", "top Accs",
+              "top level", "top level Acc", "top level Accs","top Account",
+              "parent", "parent Acc", "primary Acc",
+              "topacc", "topaccs"
+            ]
+          },
+          "sub_Acc": {
+            "condition": "AccLevelConfig = 1",
+            "parent_condition": "ParentAccID IS NOT NULL",
+            "synonyms": [
+              "sub", "sub Acc", "sub Accs",
+              "subsidiary", "child", "child Acc","Sub Account",
+              "sub level", "secondary Acc",
+              "subacc", "subaccs"
+            ]
+          }
+        }
+      },
+      "columns": [
+        { "name": "AccID", "type": "INT", "key": "primary" },
+        { "name": "AccKey", "type": "VARCHAR(50)", "is_identifier": true, "synonyms": ["Acc key", "Acc id"] },
+        { "name": "AccName", "type": "VARCHAR(100)", "is_default_text": true, "synonyms": ["Acc name"] },
+        { "name": "CustomerID", "type": "INT", "key": "foreign", "references": { "table": "Major.Customer", "column": "CustomerID" } },
+        { "name": "EffDate", "type": "DATETIME" },
+        { "name": "TermDate", "type": "DATETIME" },
+        { "name": "PlatformID", "type": "INT", "key": "foreign", "references": { "table": "Config.EPInd", "column": "PlatformID" } },
+        { "name": "AccLevelConfig", "type": "INT" },
+        { "name": "ParentAccID", "type": "INT", "key": "foreign", "references": { "table": "Major.Acc", "column": "AccID" } }
+      ],
+      "relationships": [
+        { "related_table": "Major.Customer", "from": "CustomerID", "to": "CustomerID", "type": "many-to-one" },
+        { "related_table": "Major.Acc", "from": "ParentAccID", "to": "AccID", "type": "self" },
+        { "related_table": "Config.EPInd", "from": "PlatformID", "to": "PlatformID", "type": "many-to-one" }
+      ]
+    },
+    {
+      "name": "Config.EPInd",
+      "display_name": "EPInd",
+      "schema": "Config",
+      "synonyms": ["PInd", "platform a", "pa","Enroll PInd"],
+      "description": "Lookup table for enrollment platforms",
+      "identifier":"Name",
+      "columns": [
+        { "name": "PlatformID", "type": "INT", "key": "primary" },
+        { "name": "Config", "type": "VARCHAR(50)", "synonyms": ["platform Config"] },
+        { "name": "Name", "type": "VARCHAR(100)", "synonyms": ["platform name","PInd"] }
+      ],
+      "relationships": [
+        { "related_table": "Major.Acc", "from": "PlatformID", "to": "PlatformID", "type": "one-to-many" }
+      ]
+    },
+    {
+      "name": "Major.Package",
+      "display_name": "Package",
+      "schema": "Major",
+      "synonyms": ["package", "benefit package"],
+      "description": "Versioned package information",
+      "identifier": "PackageKey",
+      "versioning": {
+        "is_versioned": true,
+        "business_key": "PackageKey",
+        "row_key": "PackageID",
+        "version_key": "PackageKey",
+        "effective_date": "VersionEffDate",
+        "termination_date": "VersionTermDate",
+        "active_condition": "VersionTermDate IS NULL"
+      },
+      "business_rules": {
+        "active_record": ["TermDate IS NULL"]
+      },
+      "columns": [
+        { "name": "PackageID", "type": "INT", "key": "primary" },
+        { "name": "PackageKey", "type": "VARCHAR(50)", "is_identifier": true, "synonyms": ["package key"] },
+        { "name": "PackageName", "type": "VARCHAR(100)", "is_default_text": true },
+        { "name": "VersionNumber", "type": "INT" },
+        { "name": "VersionEffDate", "type": "DATETIME" },
+        { "name": "VersionTermDate", "type": "DATETIME" },
+        { "name": "EffDate", "type": "DATETIME" },
+        { "name": "TermDate", "type": "DATETIME" }
+      ],
+      "relationships": [
+        { "related_table": "Major.PackagePlan", "from": "PackageID", "to": "PackageID", "type": "one-to-many" }
+      ]
+    },
+    {
+      "name": "Major.Plan",
+      "display_name": "Plan",
+      "schema": "Major",
+      "synonyms": ["plan", "benefit plan"],
+      "description": "Versioned plan information",
+      "identifier": "PlanKey",
+      "columns": [
+        { "name": "PlanId", "type": "INT", "key": "primary" },
+        { "name": "PlanName", "type": "VARCHAR(100)", "is_default_text": true },
+        { "name": "PlanKey", "type": "VARCHAR(50)", "is_identifier": true },
+        { "name": "VersionNumber", "type": "INT" },
+        { "name": "VersionEffDate", "type": "DATETIME" },
+        { "name": "VersionTermDate", "type": "DATETIME" },
+        { "name": "EffDate", "type": "DATETIME" },
+        { "name": "TermDate", "type": "DATETIME" }
+      ],
+      "relationships": [
+        { "related_table": "Major.PackagePlan", "from": "PlanId", "to": "PlanId", "type": "one-to-many" }
+      ]
+    },
+    {
+      "name": "Major.PackagePlan",
+      "display_name": "PackagePlan",
+      "schema": "Major",
+      "description": "Mapping between packages and plans",
+      "is_junction_table": true,
+      "identifier": "PackagePlanId",
+      "columns": [
+        { "name": "PackagePlanId", "type": "INT", "key": "primary" },
+        { "name": "PackageId", "type": "INT", "key": "foreign", "references": { "table": "Major.Package", "column": "PackageId" } },
+        { "name": "PlanId", "type": "INT", "key": "foreign", "references": { "table": "Major.Plan", "column": "PlanId" } }
+      ],
+      "relationships": [
+        { "related_table": "Major.Plan", "from": "PlanId", "to": "PlanId", "type": "many-to-one" },
+        { "related_table": "Major.Package", "from": "PackageId", "to": "PackageId", "type": "many-to-one" }
+      ]
+    }
+  ]
+}

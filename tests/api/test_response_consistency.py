@@ -37,7 +37,7 @@ FOUNDRY_KEY = "test-foundry-key-67890"
 
 # Minimal valid simplified IR — same as test_query.py.
 # Major.Customer ↔ Major.CustomerDemographics have a direct relationship
-# in ABC_app.json, so the validator chain resolves a clean StructuredQuery.
+# in Acme_app.json, so the validator chain resolves a clean StructuredQuery.
 _GOLDEN_IR = json.dumps({
     "tables": [
         {"table": "Major.Customer", "source": "customer"},
@@ -60,7 +60,7 @@ _GOLDEN_IR = json.dumps({
 # Bypasses the LLM + validator stages entirely — sql-builder only reads
 # structured_query from the context.
 _STRUCTURED_QUERY = {
-    "app_id": "ABC_app",
+    "app_id": "Acme_app",
     "top_rows": None,
     "tables": [
         {"table_name": "Major.Customer", "alias": "c"},
@@ -149,7 +149,7 @@ class TestStory37Removed:
             response = client.post(
                 "/v1/query",
                 json={
-                    "nl_query": "give me customers in ABC",
+                    "nl_query": "give me customers in Acme",
                     "user_id": "test-user",
                 },
                 headers={"X-API-Key": VALID_KEY},
@@ -197,7 +197,7 @@ class TestToolResponseShapes:
             response = client.post(
                 "/v1/tools/app-identifier",
                 json={
-                    "nl_query_original": "give me customers in ABC",
+                    "nl_query_original": "give me customers in Acme",
                     "user_id": "test-user",
                 },
                 headers={"X-API-Key": FOUNDRY_KEY},
@@ -219,8 +219,8 @@ class TestToolResponseShapes:
             response = client.post(
                 "/v1/tools/nl-to-ir",
                 json={
-                    "nl_query_original": "give me customers in ABC",
-                    "app_id": "ABC_app",
+                    "nl_query_original": "give me customers in Acme",
+                    "app_id": "Acme_app",
                     "app_schema_version": "1.0",
                     "user_id": "test-user",
                 },
@@ -241,8 +241,8 @@ class TestToolResponseShapes:
             response = client.post(
                 "/v1/tools/validator",
                 json={
-                    "nl_query_original": "give me customers in ABC",
-                    "app_id": "ABC_app",
+                    "nl_query_original": "give me customers in Acme",
+                    "app_id": "Acme_app",
                     "app_schema_version": "1.0",
                     "user_id": "test-user",
                     "llm_output": _LLM_OUTPUT,
@@ -264,8 +264,8 @@ class TestToolResponseShapes:
             response = client.post(
                 "/v1/tools/sql-builder",
                 json={
-                    "nl_query_original": "give me customers in ABC",
-                    "app_id": "ABC_app",
+                    "nl_query_original": "give me customers in Acme",
+                    "app_id": "Acme_app",
                     "app_schema_version": "1.0",
                     "user_id": "test-user",
                     "structured_query": _STRUCTURED_QUERY,
@@ -289,7 +289,7 @@ class TestToolResponseShapes:
             response = client.post(
                 "/v1/tools/query",
                 json={
-                    "nl_query_original": "give me customers in ABC",
+                    "nl_query_original": "give me customers in Acme",
                     "user_id": "test-user",
                 },
                 headers={"X-API-Key": FOUNDRY_KEY},
@@ -352,7 +352,7 @@ class TestErrorResponseShapes:
             response = client.post(
                 "/v1/tools/nl-to-ir",
                 json={
-                    "nl_query_original": "give me customers in ABC",
+                    "nl_query_original": "give me customers in Acme",
                     "user_id": "test-user",
                     # app_id defaults to "" — ContextValidator treats as missing
                 },

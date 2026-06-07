@@ -34,9 +34,9 @@ def _make_context(structured_query=None) -> QueryContext:
     """Build a minimal QueryContext with optional structured_query."""
     ctx = QueryContext(
         user_id="test_user",
-        app_id="ABC_app",
+        app_id="Acme_app",
         app_schema_version="1.0",
-        nl_query_original="give me customers in ABC",
+        nl_query_original="give me customers in Acme",
     )
     ctx.structured_query = structured_query
     return ctx
@@ -45,10 +45,10 @@ def _make_context(structured_query=None) -> QueryContext:
 def _minimal_structured_query() -> StructuredQuery:
     """
     A minimal StructuredQuery with one table, one column, one filter.
-    Matches a simple 'give me customer CID for customer ASA in ABC' query.
+    Matches a simple 'give me customer CID for customer CUST01 in Acme' query.
     """
     return StructuredQuery(
-        app_id="ABC_app",
+        app_id="Acme_app",
         top_rows=None,   # None → SQL builder uses settings default (10000)
         tables=[
             ResolvedTable(table_name="Major.Customer", alias="c"),
@@ -66,7 +66,7 @@ def _minimal_structured_query() -> StructuredQuery:
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
             ),
         ],
         applied_rules=[],
@@ -79,7 +79,7 @@ def _full_structured_query() -> StructuredQuery:
     Used for clause presence checks (SELECT, FROM, JOIN, WHERE).
     """
     return StructuredQuery(
-        app_id="ABC_app",
+        app_id="Acme_app",
         top_rows=None,
         tables=[
             ResolvedTable(table_name="Major.Customer", alias="c"),
@@ -107,7 +107,7 @@ def _full_structured_query() -> StructuredQuery:
                 table_alias="c",
                 column_name="CustomerCID",
                 operator="=",
-                value="ASA",
+                value="CUST01",
             ),
         ],
         applied_rules=["c.VersionTermDate IS NULL"],

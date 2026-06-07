@@ -42,7 +42,7 @@ def _is_whole_word_match(synonym: str, text: str) -> bool:
         \\b is a "word boundary" in regex — it matches the position between
         a word character (letter/digit/underscore) and a non-word character.
 
-        So \\bABC\\b matches "ABC" in "give me ABC data"
+        So \\bABC\\b matches "Acme" in "give me Acme data"
         but NOT in "xyzABC" or "ABCdef".
 
         re.escape() makes sure any special characters in the synonym
@@ -111,11 +111,7 @@ def run_app_identifier(
     else:
         query_text = context.nl_query_original
         matched_schemas = []  # collect all matches to detect ambiguity
-        print("ALL:", all_schemas)
-        print("TYPE:", type(all_schemas))
-        for  schema in all_schemas:
-            print("TYPE:", type(schema), "VALUE:", schema)
-           
+        for schema in all_schemas:
             # Check the app_name itself first, then each synonym
             # appSynonyms is stored on the schema as a list of strings
             candidates = [schema.app_name] + list(schema.appSynonyms)

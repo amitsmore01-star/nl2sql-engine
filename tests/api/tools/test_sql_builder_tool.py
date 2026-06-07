@@ -35,7 +35,7 @@ WRONG_KEY   = "wrong-key"
 # ResolvedJoin   : join_type, table_name, alias, on_conditions (list of {left, right})
 # ResolvedFilter : table_alias, column_name, operator, value, connector
 _GOLDEN_STRUCTURED_QUERY = {
-    "app_id": "ABC_app",
+    "app_id": "Acme_app",
     "tables": [
         {"table_name": "Major.Customer",             "alias": "c"},
         {"table_name": "Major.CustomerDemographics", "alias": "cd"},
@@ -59,7 +59,7 @@ _GOLDEN_STRUCTURED_QUERY = {
             "table_alias": "c",
             "column_name": "CustomerCID",
             "operator": "=",
-            "value": "ASA",
+            "value": "CUST01",
             "connector": "AND",
         }
     ],
@@ -74,9 +74,9 @@ _GOLDEN_STRUCTURED_QUERY = {
 _VALID_CONTEXT = {
     "request_id":         "test-req-sqlbuilder-001",
     "user_id":            "test-agent",
-    "app_id":             "ABC_app",
+    "app_id":             "Acme_app",
     "app_schema_version": "1.0",
-    "nl_query_original":  "give me customer name for customer ASA in ABC",
+    "nl_query_original":  "give me customer name for customer CUST01 in Acme",
     "nl_query_corrected": None,
     "llm_output":         None,
     "resolved_tables":    [],
@@ -100,7 +100,7 @@ _VALID_CONTEXT = {
 # ---------------------------------------------------------------------------
 
 def make_client() -> TestClient:
-    """Create a TestClient using the real ABC schema directory."""
+    """Create a TestClient using the real Acme schema directory."""
     app = create_app(schema_dir="schemas")
     return TestClient(app, raise_server_exceptions=False)
 

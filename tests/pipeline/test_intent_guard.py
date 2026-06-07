@@ -26,7 +26,7 @@ def _make_context(query: str) -> QueryContext:
     """Build a minimal QueryContext with the given NL query."""
     return QueryContext(
         user_id="test_user",
-        app_id="ABC_app",
+        app_id="Acme_app",
         app_schema_version="1.0",
         nl_query_original=query,
     )
@@ -46,7 +46,7 @@ class TestIntentGuardPass:
 
     def test_A1_clean_select_query_passes(self):
         """A normal SELECT query is not blocked."""
-        ctx = _make_context("give me customer name for customer ASA in ABC")
+        ctx = _make_context("give me customer name for customer CUST01 in Acme")
         logger = _make_logger()
 
         result = run_intent_guard(ctx, logger)
@@ -66,7 +66,7 @@ class TestIntentGuardPass:
 
     def test_A10_updates_partial_word_passes(self):
         """'updates' contains 'update' but is a different word — must not be blocked."""
-        ctx = _make_context("show updates to customer ASA in ABC")
+        ctx = _make_context("show updates to customer CUST01 in Acme")
         logger = _make_logger()
 
         result = run_intent_guard(ctx, logger)
@@ -76,7 +76,7 @@ class TestIntentGuardPass:
 
     def test_created_partial_word_passes(self):
         """'created' contains 'create' but is a different word — must not be blocked."""
-        ctx = _make_context("show records created this month in ABC")
+        ctx = _make_context("show records created this month in Acme")
         logger = _make_logger()
 
         result = run_intent_guard(ctx, logger)
@@ -86,7 +86,7 @@ class TestIntentGuardPass:
 
     def test_insertion_partial_word_passes(self):
         """'insertion' contains 'insert' but is a different word — must not be blocked."""
-        ctx = _make_context("show insertion records in ABC")
+        ctx = _make_context("show insertion records in Acme")
         logger = _make_logger()
 
         result = run_intent_guard(ctx, logger)
@@ -119,7 +119,7 @@ class TestIntentGuardBlock:
 
     def test_A2_delete_case_insensitive(self):
         """DELETE is matched case-insensitively."""
-        self._assert_blocked("delete all records in ABC", "DELETE")
+        self._assert_blocked("delete all records in Acme", "DELETE")
 
     def test_A3_drop_keyword_blocked(self):
         """DROP is a blocked keyword."""
@@ -155,7 +155,7 @@ class TestIntentGuardLogging:
 
     def test_A11_log_emitted_on_pass(self):
         """Log is emitted with passed=True when query passes."""
-        ctx = _make_context("give me customer name in ABC")
+        ctx = _make_context("give me customer name in Acme")
         logger = _make_logger()
 
         run_intent_guard(ctx, logger)
@@ -168,7 +168,7 @@ class TestIntentGuardLogging:
 
     def test_A11_log_emitted_on_block(self):
         """Log is emitted with passed=False and keyword list when query is blocked."""
-        ctx = _make_context("DELETE all customers in ABC")
+        ctx = _make_context("DELETE all customers in Acme")
         logger = _make_logger()
 
         run_intent_guard(ctx, logger)
@@ -181,7 +181,7 @@ class TestIntentGuardLogging:
 
     def test_log_carries_request_id(self):
         """Log entry carries the request_id from context."""
-        ctx = _make_context("give me customers in ABC")
+        ctx = _make_context("give me customers in Acme")
         logger = _make_logger()
 
         run_intent_guard(ctx, logger)

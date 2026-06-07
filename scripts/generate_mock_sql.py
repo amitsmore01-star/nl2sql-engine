@@ -12,16 +12,16 @@
 #   python scripts/generate_mock_sql.py
 #
 # Output format:
-#   [1] give me topaccount name for customer ASA
-#       app_id : ABC_app (explicit)
+#   [1] give me topaccount name for customer CUST01
+#       app_id : Acme_app (explicit)
 #       SQL    : SELECT TOP 10000 ...
 #
-#   [2] give planname assoicated with packagekey 091222 in ABC
+#   [2] give planname assoicated with packagekey 091222 in Acme
 #       app_id : auto-detected
 #       SQL    : SELECT TOP 10000 ...
 #
 # If an entry fails (e.g. APP_NOT_DETERMINED, NO_RELEVANT_TABLES):
-#   [3] give all clients in ABC
+#   [3] give all clients in Acme
 #       app_id : auto-detected
 #       ERROR  : NO_RELEVANT_TABLES — No relevant tables found ...
 #

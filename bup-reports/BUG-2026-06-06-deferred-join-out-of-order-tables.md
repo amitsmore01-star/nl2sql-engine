@@ -15,9 +15,9 @@ Check schema relationships.
 ```
 
 Example query: "give me topacc name, subacc name, customername, customercid for
-subaccount with EnrollPlatformIndicator is CoreFI in ABC"
+subaccount with EPInd is PlatformA in Acme"
 
-LLM output table order: `[Acc, CustomerDemographics, Customer, EnrollPlatformIndicator]`
+LLM output table order: `[Acc, CustomerDemographics, Customer, EPInd]`
 
 `CustomerDemographics` has no direct relationship to `Acc` — it connects through
 `Customer`. But `Customer` appeared later in the LLM list, so when the join resolver
@@ -81,7 +81,7 @@ Trace for the failing query:
 Pass 1:
   CustomerDemographics vs [Acc]        → no path   → DEFERRED
   Customer vs [Acc]                    → Acc.CustomerID = c.CustomerID ✓ anchored
-  EnrollPlatformIndicator vs [Acc, c]  → Acc.EnrollPlatformID ✓ anchored
+  EPInd vs [Acc, c]  → Acc.PlatformID ✓ anchored
 
 Pass 2:
   CustomerDemographics vs [Acc, c, epi] → c.CustomerID = cd.CustomerID ✓ anchored
@@ -125,9 +125,9 @@ Done — 3 joins produced, no error.
 
 New tests J1–J8 in `tests/validator/test_join_resolver.py`:
 - J1: `[Acc, CustomerDemographics, Customer]` → 2 joins, resolves in 2 passes
-- J2: `[Acc, CustomerDemographics, Customer, EnrollPlatformIndicator]` → 3 joins
+- J2: `[Acc, CustomerDemographics, Customer, EPInd]` → 3 joins
 - J3: `[Acc, Package]` → `NoJoinPathError` (genuinely disconnected)
-- J4: `[CustomerDemographics, EnrollPlatformIndicator]` → `NoJoinPathError`
+- J4: `[CustomerDemographics, EPInd]` → `NoJoinPathError`
 - J5: Regression — direct join `[Customer, Acc]` still works
 - J6: Regression — ordered join `[Customer, CD, Acc]` still works
 - J7: Regression — self-join `[Customer, Acc top, Acc sub]` — a_sub still gets both conditions

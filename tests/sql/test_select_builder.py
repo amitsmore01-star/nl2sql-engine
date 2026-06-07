@@ -38,7 +38,7 @@ def _make_query(
 ) -> StructuredQuery:
     """Shorthand to build a minimal StructuredQuery with only columns set."""
     return StructuredQuery(
-        app_id="ABC_app",
+        app_id="Acme_app",
         top_rows=top_rows,
         columns=columns,
     )
@@ -212,7 +212,7 @@ def test_s8_golden_select_clause():
     """
     Golden scenario from architecture document Section 9.3.
 
-    Input NL: "give me customer name, top acc and sub acc for customer ASA in ABC"
+    Input NL: "give me customer name, top acc and sub acc for customer CUST01 in Acme"
 
     Expected SELECT clause (exactly):
         SELECT TOP 10000

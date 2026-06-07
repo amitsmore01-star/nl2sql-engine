@@ -40,7 +40,7 @@ CLIENT_KEY  = "test-client-key-12345"
 WRONG_KEY   = "wrong-key"
 
 # Minimal valid llm_output — single table, one column, no filters.
-# Matches ABC_app schema — Major.Customer and Major.CustomerDemographics exist.
+# Matches Acme_app schema — Major.Customer and Major.CustomerDemographics exist.
 _GOLDEN_LLM_OUTPUT = {
     "tables": [
         {"table": "Major.Customer",             "source": "customer"},
@@ -52,7 +52,7 @@ _GOLDEN_LLM_OUTPUT = {
     ],
     "filters": [
         {"table": "Major.Customer", "column": "CustomerCID",
-         "operator": "=", "value": "ASA", "source": "customer ASA"},
+         "operator": "=", "value": "CUST01", "source": "customer CUST01"},
     ],
     "limit": None,
     "aggregation": None,
@@ -64,9 +64,9 @@ _GOLDEN_LLM_OUTPUT = {
 _VALID_CONTEXT = {
     "request_id":          "test-req-validator-001",
     "user_id":             "test-agent",
-    "app_id":              "ABC_app",
+    "app_id":              "Acme_app",
     "app_schema_version":  "1.0",
-    "nl_query_original":   "give me customer name for customer ASA in ABC",
+    "nl_query_original":   "give me customer name for customer CUST01 in Acme",
     "nl_query_corrected":  None,
     "llm_output":          _GOLDEN_LLM_OUTPUT,
     "resolved_tables":     [],
@@ -90,7 +90,7 @@ _VALID_CONTEXT = {
 # ---------------------------------------------------------------------------
 
 def make_client() -> TestClient:
-    """Create a TestClient using the real ABC schema directory."""
+    """Create a TestClient using the real Acme schema directory."""
     app = create_app(schema_dir="schemas")
     return TestClient(app, raise_server_exceptions=False)
 

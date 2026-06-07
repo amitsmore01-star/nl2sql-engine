@@ -70,8 +70,8 @@ def make_context(**overrides) -> QueryContext:
         llm_output, structured_query, nl_query_corrected.
     """
     defaults = dict(
-        nl_query_original="give me customer name in ABC",
-        app_id="ABC_app",
+        nl_query_original="give me customer name in Acme",
+        app_id="Acme_app",
         app_schema_version="1.0",
         llm_output={"tables": [], "columns": [], "filters": [], "limit": None},
         structured_query=None,
@@ -115,7 +115,7 @@ class TestHappyPath:
         A4: sql-builder needs app_id + structured_query.
         StructuredQuery requires app_id — cannot be instantiated with no arguments.
         """
-        sq = StructuredQuery(app_id="ABC_app")
+        sq = StructuredQuery(app_id="Acme_app")
         ctx = make_context(structured_query=sq)
         ContextValidator().validate(ctx, "sql-builder")
 

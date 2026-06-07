@@ -47,7 +47,7 @@ def _make_context(
 ) -> QueryContext:
     ctx = QueryContext(
         nl_query_original=query,
-        app_id="ABC_app",
+        app_id="Acme_app",
         app_schema_version="1.0",
     )
     ctx.resolved_tables = tables
@@ -85,7 +85,7 @@ class TestSingleTable:
 
         sq: StructuredQuery = result.structured_query
         assert sq is not None
-        assert sq.app_id == "ABC_app"
+        assert sq.app_id == "Acme_app"
 
         assert len(sq.tables) == 1
         assert sq.tables[0].table_name == "Major.Customer"
@@ -129,8 +129,8 @@ class TestMultiTable:
                 "table": "Major.Customer",
                 "column": "CustomerCID",
                 "operator": "=",
-                "value": "ASA",
-                "source": "customer ASA",
+                "value": "CUST01",
+                "source": "customer CUST01",
             }],
         )
         result = run_structured_query_builder(ctx, capturing_logger)
@@ -153,7 +153,7 @@ class TestMultiTable:
         assert f.table_alias == "c"
         assert f.column_name == "CustomerCID"
         assert f.operator == "="
-        assert f.value == "ASA"
+        assert f.value == "CUST01"
 
         # Column alias lookup
         col_cd = next(c for c in sq.columns if c.column_name == "CustomerName")
@@ -241,7 +241,7 @@ class TestSelfJoin:
                 "source": "top acc TOP1",
                 "role": "top_Acc",
             }],
-            query="give me top acc and sub acc for customer ASA",
+            query="give me top acc and sub acc for customer CUST01",
         )
 
     def test_C1_columns_mapped_to_correct_aliases(self, capturing_logger):

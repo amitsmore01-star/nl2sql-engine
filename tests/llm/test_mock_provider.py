@@ -112,12 +112,12 @@ class TestMockLLMProviderJsonMode:
         """J1 — user query extracted from prompt matches entry, correct response returned."""
         _write_json_file(self.tmp_json, [
             {
-                "user_input": "give me topaccount name for customer ASA",
+                "user_input": "give me topaccount name for customer CUST01",
                 "llm_response": '{"tables": [], "columns": [], "filters": [], "limit": null, "aggregation": null, "sort": []}'
             }
         ])
         mock = MockLLMProvider()
-        user_prompt = _make_user_prompt("give me topaccount name for customer ASA")
+        user_prompt = _make_user_prompt("give me topaccount name for customer CUST01")
         result = mock.complete("sys", user_prompt)
         assert '"tables"' in result
 
@@ -130,7 +130,7 @@ class TestMockLLMProviderJsonMode:
             }
         ])
         mock = MockLLMProvider()
-        user_prompt = _make_user_prompt("give me topaccount name for customer ASA")
+        user_prompt = _make_user_prompt("give me topaccount name for customer CUST01")
         with pytest.raises(ValueError, match="no matching entry"):
             mock.complete("sys", user_prompt)
 
@@ -153,7 +153,7 @@ class TestMockLLMProviderJsonMode:
         """
         _write_json_file(self.tmp_json, [
             {
-                "user_input": "give me topaccount name for customer ASA",
+                "user_input": "give me topaccount name for customer CUST01",
                 "llm_response": '{"matched": true}'
             }
         ])
@@ -168,7 +168,7 @@ class TestMockLLMProviderJsonMode:
             "  AccID\n"
             "  AccName [Acc name]\n\n"
             f"{_USER_QUERY_LABEL}\n"
-            "give me topaccount name for customer ASA"
+            "give me topaccount name for customer CUST01"
         )
         result = mock.complete("sys", full_prompt)
         assert result == '{"matched": true}'

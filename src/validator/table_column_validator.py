@@ -23,7 +23,7 @@
 #      are unaffected by this check.
 #      Previously the validator handled only tables and columns; llm_output['filters']
 #      was never copied into context.resolved_filters, so every user filter (e.g.
-#      CustomerCID = 'ASA') was silently lost and never reached the WHERE clause.
+#      CustomerCID = 'CUST01') was silently lost and never reached the WHERE clause.
 #      New Stage 3 validates each filter the same way columns are validated (table
 #      must be in proposed tables; column must exist on that table) and stores the
 #      full dicts in context.resolved_filters. Filter failures raise

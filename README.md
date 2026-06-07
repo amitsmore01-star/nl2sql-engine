@@ -37,8 +37,8 @@ cp .env.example .env        # Mac/Linux
 
 ### CLI
 ```bash
-python main.py query "give me customer name for customer ASA in ABC"
-python main.py query "give me customers" --app-id ABC_app
+python main.py query "give me customer name for customer CUST01 in Acme"
+python main.py query "give me customers" --app-id Acme_app
 python main.py query "give me customers" --output json
 ```
 

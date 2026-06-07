@@ -21,7 +21,7 @@
 #     "status":     "success",
 #     "data": {
 #       "apps": [
-#         {"app_id": "ABC_app", "version": "1.0"},
+#         {"app_id": "Acme_app", "version": "1.0"},
 #         ...
 #       ]
 #     },

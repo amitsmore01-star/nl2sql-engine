@@ -43,8 +43,8 @@ VALID_IR = {
             "table": "Major.Customer",
             "column": "CustomerCID",
             "operator": "=",
-            "value": "ASA",
-            "source": "customer ASA",
+            "value": "CUST01",
+            "source": "customer CUST01",
         }
     ],
     "limit": None,
@@ -79,9 +79,9 @@ def _make_context() -> QueryContext:
     """Minimal QueryContext for strategy tests."""
     return QueryContext(
         user_id="test-user",
-        app_id="ABC_app",
+        app_id="Acme_app",
         app_schema_version="1.0",
-        nl_query_original="give me customer name for customer ASA in ABC",
+        nl_query_original="give me customer name for customer CUST01 in Acme",
     )
 
 

@@ -29,9 +29,9 @@ from fastapi.testclient import TestClient
 from src.api.app import create_app
 
 # ---------------------------------------------------------------------------
-# Path to the real ABC_app.json — copied into temp dirs during tests
+# Path to the real Acme_app.json — copied into temp dirs during tests
 # ---------------------------------------------------------------------------
-REAL_SCHEMA_FILE = Path(__file__).parent.parent.parent / "schemas" / "ABC_app.json"
+REAL_SCHEMA_FILE = Path(__file__).parent.parent.parent / "schemas" / "Acme_app.json"
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ def _make_schema_dir(tmp_path: Path, valid: bool = True) -> Path:
 
     Args:
         tmp_path: pytest-provided temp directory (unique per test).
-        valid:    True  → copies real ABC_app.json (valid schema).
+        valid:    True  → copies real Acme_app.json (valid schema).
                   False → writes broken JSON (triggers load failure).
 
     Returns:
@@ -54,7 +54,7 @@ def _make_schema_dir(tmp_path: Path, valid: bool = True) -> Path:
     schema_dir.mkdir(parents=True, exist_ok=True)
 
     if valid:
-        shutil.copy(REAL_SCHEMA_FILE, schema_dir / "ABC_app.json")
+        shutil.copy(REAL_SCHEMA_FILE, schema_dir / "Acme_app.json")
     else:
         (schema_dir / "bad_schema.json").write_text(
             "{ not valid json }", encoding="utf-8"
@@ -170,7 +170,7 @@ class TestReadyHappyPath:
             )
 
     def test_r4_schemas_loaded_includes_app_count(self, ready_response):
-        """R4 — schemas_loaded includes app_count = 1 for ABC schema."""
+        """R4 — schemas_loaded includes app_count = 1 for Acme schema."""
         schemas_loaded = ready_response.json()["checks"]["schemas_loaded"]
         assert "app_count" in schemas_loaded
         assert schemas_loaded["app_count"] == 1
@@ -298,7 +298,7 @@ class TestReadyFailures:
         # Valid schema in a separate sub-path
         schema_dir = tmp_path / "sc" / "schemas"
         schema_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REAL_SCHEMA_FILE, schema_dir / "ABC_app.json")
+        shutil.copy(REAL_SCHEMA_FILE, schema_dir / "Acme_app.json")
 
         app = create_app(schema_dir=schema_dir)
 
@@ -326,7 +326,7 @@ class TestReadyFailures:
         """F7 — Empty LLM provider string → llm_provider check fails → 503."""
         schema_dir = tmp_path / "sc" / "schemas"
         schema_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REAL_SCHEMA_FILE, schema_dir / "ABC_app.json")
+        shutil.copy(REAL_SCHEMA_FILE, schema_dir / "Acme_app.json")
 
         app = create_app(schema_dir=schema_dir)
 

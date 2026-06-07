@@ -4,7 +4,7 @@
 # Shared fixtures for all tests in tests/validator/.
 #
 # Fixtures provided:
-#   abc_schema_repo   — SchemaRepository loaded with the real ABC_app.json schema.
+#   abc_schema_repo   — SchemaRepository loaded with the real Acme_app.json schema.
 #                       Used by all validator tests that need schema lookups.
 #   test_logger       — Real StructuredLogger writing to a tmp directory.
 #                       Used when tests need a logger but do not inspect log output.
@@ -30,7 +30,7 @@ from src.schema.schema_repository import SchemaRepository
 @pytest.fixture(scope="session")
 def abc_schema_repo() -> SchemaRepository:
     """
-    Load the real ABC_app.json schema from the schemas/ directory.
+    Load the real Acme_app.json schema from the schemas/ directory.
     Scoped to session — loaded once, shared across all validator tests.
     SchemaRepository is read-only after load, so sharing is safe.
     """

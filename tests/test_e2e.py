@@ -93,7 +93,7 @@ _MOCK_RESPONSES_PATH = Path("config/mock_responses.json")
 # ---------------------------------------------------------------------------
 
 _GOLDEN_NL_QUERY = (
-    "give me customer name, top acc and sub acc for customer ASA in ABC"
+    "give me customer name, top acc and sub acc for customer CUST01 in Acme"
 )
 
 _GOLDEN_IR = json.dumps({
@@ -125,8 +125,8 @@ _GOLDEN_IR = json.dumps({
             "table":    "Major.Customer",
             "column":   "CustomerCID",
             "operator": "=",
-            "value":    "ASA",
-            "source":   "customer ASA",
+            "value":    "CUST01",
+            "source":   "customer CUST01",
         }
     ],
     "limit":       None,
@@ -155,7 +155,7 @@ INNER JOIN Major.Acc a_sub
   ON a_top.AccID = a_sub.ParentAccID
   AND c.CustomerID = a_sub.CustomerID
 WHERE
-  c.CustomerCID             = 'ASA'
+  c.CustomerCID             = 'CUST01'
   AND c.VersionTermDate         IS NULL
   AND ISNULL(c.DeletedFlag, 0)  = 0
   AND c.VoidedDate              IS NULL
@@ -445,7 +445,7 @@ class TestDataDriven:
     To add a new test case:
       1. Add an entry to config/mock_responses.json with:
            user_input, llm_response, final_sql
-         and optionally app_id (for queries without "in ABC")
+         and optionally app_id (for queries without "in Acme")
       2. Run pytest — no code change needed.
 
     Entries without final_sql are skipped automatically.

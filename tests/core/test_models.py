@@ -107,7 +107,7 @@ class TestLLMOutputField:
         ir = {
             "tables": [{"table": "Major.Customer", "source": "customer"}],
             "columns": [{"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "customer name"}],
-            "filters": [{"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}],
+            "filters": [{"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "CUST01", "source": "customer CUST01"}],
             "limit": None,
             "aggregation": None,
             "sort": [],
@@ -146,8 +146,8 @@ class TestNLQueryImmutability:
 
     def test_nl_query_original_stored_correctly(self):
         """The value is accessible after creation."""
-        ctx = QueryContext(nl_query_original="give me customers in ABC")
-        assert ctx.nl_query_original == "give me customers in ABC"
+        ctx = QueryContext(nl_query_original="give me customers in Acme")
+        assert ctx.nl_query_original == "give me customers in Acme"
 
     def test_nl_query_original_cannot_be_reassigned(self):
         """Reassigning nl_query_original after creation raises AttributeError."""
@@ -158,8 +158,8 @@ class TestNLQueryImmutability:
     def test_other_fields_remain_mutable(self):
         """Other fields (e.g. app_id) can be freely updated after creation."""
         ctx = QueryContext(nl_query_original="test")
-        ctx.app_id = "ABC_app"
-        assert ctx.app_id == "ABC_app"
+        ctx.app_id = "Acme_app"
+        assert ctx.app_id == "Acme_app"
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ class TestStructuredQuery:
 
     def test_defaults_are_empty(self):
         """All list fields default to empty, top_rows defaults to None."""
-        sq = StructuredQuery(app_id="ABC_app")
+        sq = StructuredQuery(app_id="Acme_app")
         assert sq.top_rows is None
         assert sq.tables == []
         assert sq.columns == []
@@ -188,15 +188,15 @@ class TestStructuredQuery:
     def test_full_construction(self):
         """StructuredQuery accepts all fields."""
         sq = StructuredQuery(
-            app_id="ABC_app",
+            app_id="Acme_app",
             top_rows=10000,
             tables=[ResolvedTable(table_name="Major.Customer", alias="c")],
             columns=[ResolvedColumn(table_alias="c", column_name="CustomerName", output_alias="CustomerName")],
             joins=[ResolvedJoin(table_name="Major.CustomerDemographics", alias="cd", on_left="c.CustomerID", on_right="cd.CustomerID")],
-            filters=[ResolvedFilter(table_alias="c", column_name="CustomerCID", operator="=", value="ASA")],
+            filters=[ResolvedFilter(table_alias="c", column_name="CustomerCID", operator="=", value="CUST01")],
             applied_rules=["c.VersionTermDate IS NULL"],
         )
-        assert sq.app_id == "ABC_app"
+        assert sq.app_id == "Acme_app"
         assert sq.top_rows == 10000
         assert len(sq.tables) == 1
         assert sq.tables[0].alias == "c"
@@ -235,7 +235,7 @@ class TestResolvedJoin:
 
 class TestResolvedFilter:
     def test_fields(self):
-        f = ResolvedFilter(table_alias="c", column_name="CustomerCID", operator="=", value="ASA")
+        f = ResolvedFilter(table_alias="c", column_name="CustomerCID", operator="=", value="CUST01")
         assert f.table_alias == "c"
         assert f.operator == "="
-        assert f.value == "ASA"
+        assert f.value == "CUST01"

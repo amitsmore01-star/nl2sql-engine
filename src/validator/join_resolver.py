@@ -572,7 +572,7 @@ def run_join_resolver(
             assigned: set = set()
 
             # [V3] Check for hierarchy role even on single-instance tables.
-            # A query like "give me top acc name for customer ASA" has only one
+            # A query like "give me top acc name for customer CUST01" has only one
             # Major.Acc entry — but the source "top acc" should still drive
             # AccLevelConfig=0 and ParentAccID IS NULL conditions in rule_applicator.
             role = None

@@ -2,7 +2,7 @@
 # V0 - Initial implementation
 # V1 - Updated test_a5 assertion: CustomerName now has two synonyms
 #      ["Customer name","customername"] after "customername" was added to
-#      ABC_app.json during Bug C investigation. Output is now
+#      Acme_app.json during Bug C investigation. Output is now
 #      "CustomerName [Customer name, customername]".
 #
 # Tests for build_schema_summary() in src/pipeline/schema_summary.py
@@ -25,8 +25,8 @@ from src.pipeline.schema_summary import build_schema_summary
 # ---------------------------------------------------------------------------
 
 def load_abc_schema() -> AppSchema:
-    """Load the real ABC_app.json schema — used in most tests."""
-    schema_path = Path("schemas/ABC_app.json")
+    """Load the real Acme_app.json schema — used in most tests."""
+    schema_path = Path("schemas/Acme_app.json")
     with schema_path.open() as f:
         data = json.load(f)
     return AppSchema.model_validate(data)
@@ -58,7 +58,7 @@ class TestOutputContent:
             "Major.Customer",
             "Major.CustomerDemographics",
             "Major.Acc",
-            "Config.EnrollPlatformIndicator",
+            "Config.EPInd",
             "Major.Package",
             "Major.Plan",
         ]
@@ -117,7 +117,7 @@ class TestOutputContent:
         )
 
         # CustomerName has synonyms: ["Customer name", "customername"]
-        # (second synonym added to ABC_app.json during Bug C investigation)
+        # (second synonym added to Acme_app.json during Bug C investigation)
         assert "CustomerName [Customer name, customername]" in result, (
             "CustomerName synonyms must appear in brackets in the summary"
         )
@@ -152,7 +152,7 @@ class TestTokenBudget:
     """build_schema_summary() output stays within the LLM token budget."""
 
     def test_b1_output_under_1200_tokens(self):
-        """B1: Full ABC_app.json summary is under ~1,200 tokens (~4,800 characters)."""
+        """B1: Full Acme_app.json summary is under ~1,200 tokens (~4,800 characters)."""
         schema = load_abc_schema()
         result = build_schema_summary(schema)
 

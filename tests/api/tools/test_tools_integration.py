@@ -48,7 +48,7 @@ from src.llm.mock_provider import MockLLMProvider
 FOUNDRY_KEY = "test-foundry-key-67890"
 
 # Minimal valid simplified IR — Major.Customer ↔ Major.CustomerDemographics
-# have a direct relationship in ABC_app.json. The validator chain resolves
+# have a direct relationship in Acme_app.json. The validator chain resolves
 # a clean StructuredQuery from this IR and the SQL builder produces valid SQL.
 # Same golden IR used in test_query.py and test_response_consistency.py.
 _GOLDEN_IR = json.dumps({
@@ -93,13 +93,13 @@ _HAND_CRAFTED_LLM_OUTPUT = {
 # Minimal initial context body — only nl_query_original required for the
 # first stage (app-identifier). All other QueryContext fields use defaults.
 _INITIAL_CONTEXT = {
-    "nl_query_original": "give me customers in ABC",
+    "nl_query_original": "give me customers in Acme",
     "user_id": "integration-test-user",
 }
 
 # Non-select query used to trigger Intent Guard at every entry point.
 _DELETE_QUERY_CONTEXT = {
-    "nl_query_original": "DELETE all customers in ABC",
+    "nl_query_original": "DELETE all customers in Acme",
     "user_id": "integration-test-user",
 }
 
@@ -110,7 +110,7 @@ _DELETE_QUERY_CONTEXT = {
 
 def make_client() -> TestClient:
     """
-    Create a TestClient with the real ABC schema loaded.
+    Create a TestClient with the real Acme schema loaded.
     raise_server_exceptions=False lets the global exception handler (Story 6.2)
     return structured responses rather than re-raising in the test thread.
     The MockLLMProvider is NOT overridden here — tests that need a specific
@@ -141,7 +141,7 @@ class TestSequentialPipeline:
 
         Step 1  POST /v1/tools/app-identifier
                 Input:  nl_query_original only
-                Assert: context.app_id == "ABC_app"
+                Assert: context.app_id == "Acme_app"
 
         Step 2  POST /v1/tools/nl-to-ir
                 Input:  context from Step 1 (app_id now set)
@@ -171,8 +171,8 @@ class TestSequentialPipeline:
             )
             assert r1.status_code == 200, f"Step 1 failed: {r1.text}"
             ctx1 = r1.json()["context"]
-            assert ctx1["app_id"] == "ABC_app", (
-                "Step 1: app_id must be 'ABC_app' after app-identifier runs."
+            assert ctx1["app_id"] == "Acme_app", (
+                "Step 1: app_id must be 'Acme_app' after app-identifier runs."
             )
             assert ctx1["app_schema_version"] == "1.0", (
                 "Step 1: app_schema_version must be populated by app-identifier."
@@ -197,7 +197,7 @@ class TestSequentialPipeline:
                 "Step 2: llm_output must have a 'tables' key."
             )
             # app_id from Step 1 must be preserved
-            assert ctx2["app_id"] == "ABC_app", (
+            assert ctx2["app_id"] == "Acme_app", (
                 "Step 2: app_id set in Step 1 must still be present."
             )
 
@@ -265,7 +265,7 @@ class TestHandCraftedLLMOutput:
         """
         context_body = {
             **_INITIAL_CONTEXT,
-            "app_id": "ABC_app",
+            "app_id": "Acme_app",
             "app_schema_version": "1.0",
             "llm_output": _HAND_CRAFTED_LLM_OUTPUT,
         }
@@ -291,7 +291,7 @@ class TestHandCraftedLLMOutput:
         """
         context_body = {
             **_INITIAL_CONTEXT,
-            "app_id": "ABC_app",
+            "app_id": "Acme_app",
             "app_schema_version": "1.0",
             "llm_output": _HAND_CRAFTED_LLM_OUTPUT,
         }
@@ -349,9 +349,9 @@ class TestOutOfOrderCall:
         # All required fields for the validator stage are pre-populated.
         # No prior tool endpoint calls were made to set them.
         pre_populated_context = {
-            "nl_query_original": "give me customers in ABC",
+            "nl_query_original": "give me customers in Acme",
             "user_id": "integration-test-user",
-            "app_id": "ABC_app",                    # normally set by app-identifier
+            "app_id": "Acme_app",                    # normally set by app-identifier
             "app_schema_version": "1.0",             # normally set by app-identifier
             "llm_output": _HAND_CRAFTED_LLM_OUTPUT, # normally set by nl-to-ir
         }
@@ -407,7 +407,7 @@ class TestMixedWorkflow:
             )
             assert r1.status_code == 200, f"D1 app-identifier failed: {r1.text}"
             ctx_with_app = r1.json()["context"]
-            assert ctx_with_app["app_id"] == "ABC_app"
+            assert ctx_with_app["app_id"] == "Acme_app"
 
             # ----------------------------------------------------------
             # Step 2 — Full pipeline via tools/query
@@ -475,7 +475,7 @@ class TestIntentGuardAtEveryEntryPoint:
         """
         context_body = {
             **_DELETE_QUERY_CONTEXT,
-            "app_id": "ABC_app",
+            "app_id": "Acme_app",
             "app_schema_version": "1.0",
         }
 

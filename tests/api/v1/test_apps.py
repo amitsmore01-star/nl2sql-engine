@@ -33,7 +33,7 @@ FOUNDRY_KEY = "test-foundry-key-67890"
 
 def make_client(schema_dir: str = "schemas") -> TestClient:
     """
-    Create a TestClient backed by the real ABC schema directory.
+    Create a TestClient backed by the real Acme schema directory.
     raise_server_exceptions=False is required so that the global exception
     handler (middleware.py) can return a structured response for Group D.
     """
@@ -102,7 +102,7 @@ class TestSuccessContent:
         assert response.status_code == 200
 
     def test_b2_data_apps_is_non_empty_list(self):
-        """data.apps contains at least one entry (ABC_app schema is loaded)."""
+        """data.apps contains at least one entry (Acme_app schema is loaded)."""
         with make_client() as client:
             response = client.get(
                 "/v1/apps",
@@ -127,8 +127,8 @@ class TestSuccessContent:
 
     def test_b4_abc_app_present_with_correct_version(self):
         """
-        ABC_app is in the list with version '1.0'.
-        This is the real ABC_app.json loaded from the schemas/ directory.
+        Acme_app is in the list with version '1.0'.
+        This is the real Acme_app.json loaded from the schemas/ directory.
         """
         with make_client() as client:
             response = client.get(
@@ -136,8 +136,8 @@ class TestSuccessContent:
                 headers={"X-API-Key": VALID_KEY},
             )
         apps = response.json()["data"]["apps"]
-        abc = next((a for a in apps if a["app_id"] == "ABC_app"), None)
-        assert abc is not None, "ABC_app not found in /v1/apps response"
+        abc = next((a for a in apps if a["app_id"] == "Acme_app"), None)
+        assert abc is not None, "Acme_app not found in /v1/apps response"
         assert abc["version"] == "1.0"
 
 

@@ -100,13 +100,13 @@ class TestLogEntryModel:
             request_id="req-008",
             stage=constants.RESPONSE_SENT,
             user_id="Phase1_user",
-            app_id="ABC_app",
+            app_id="Acme_app",
             app_schema_version="1.0",
             latency_ms=310,
             payload={"status": "success"},
         )
         assert entry.user_id == "Phase1_user"
-        assert entry.app_id == "ABC_app"
+        assert entry.app_id == "Acme_app"
         assert entry.app_schema_version == "1.0"
         assert entry.latency_ms == 310
 

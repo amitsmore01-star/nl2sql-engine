@@ -39,12 +39,12 @@ from src.validator.rule_applicator import _qualify_condition, run_rule_applicato
 
 def _make_context(
     tables: list[dict],
-    query: str = "give me customers in ABC",
+    query: str = "give me customers in Acme",
 ) -> QueryContext:
     """Build a minimal QueryContext with resolved_tables pre-populated."""
     ctx = QueryContext(
         nl_query_original=query,
-        app_id="ABC_app",
+        app_id="Acme_app",
         app_schema_version="1.0",
     )
     ctx.resolved_tables = tables
@@ -85,7 +85,7 @@ class TestActiveRecordRules:
 
     def test_A3_table_no_active_record(self, abc_schema_repo, capturing_logger):
         """A3: Table with no active_record → no rules added, no error."""
-        # Major.CustomerDemographics has no business_rules in ABC_app.json
+        # Major.CustomerDemographics has no business_rules in Acme_app.json
         ctx = _make_context([
             {"table": "Major.CustomerDemographics", "source": "customer name", "alias": "cd"}
         ])
@@ -179,7 +179,7 @@ class TestSuppressTokens:
         # "history" is a suppress token for Major.Customer
         ctx = _make_context(
             [{"table": "Major.Customer", "source": "customer", "alias": "c"}],
-            query="give me all customer history in ABC",
+            query="give me all customer history in Acme",
         )
         result = run_rule_applicator(ctx, abc_schema_repo, capturing_logger)
 
@@ -192,7 +192,7 @@ class TestSuppressTokens:
         """D2: No suppress token → rules applied normally."""
         ctx = _make_context(
             [{"table": "Major.Customer", "source": "customer", "alias": "c"}],
-            query="give me all customers in ABC",
+            query="give me all customers in Acme",
         )
         result = run_rule_applicator(ctx, abc_schema_repo, capturing_logger)
 
@@ -201,10 +201,10 @@ class TestSuppressTokens:
 
     def test_D3_table_no_filter_control(self, abc_schema_repo, capturing_logger):
         """D3: Table has no filter_control → rules applied normally, no error."""
-        # Major.Acc has no filter_control in ABC_app.json
+        # Major.Acc has no filter_control in Acme_app.json
         ctx = _make_context(
             [{"table": "Major.Acc", "source": "acc", "alias": "a"}],
-            query="give me all acc history in ABC",
+            query="give me all acc history in Acme",
         )
         result = run_rule_applicator(ctx, abc_schema_repo, capturing_logger)
 

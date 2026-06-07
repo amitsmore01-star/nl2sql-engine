@@ -48,7 +48,7 @@ class MockLLMProvider(LLMProvider):
     JSON file format (config/mock_responses.json):
         [
           {
-            "user_input": "give me topaccount name for customer ASA",
+            "user_input": "give me topaccount name for customer CUST01",
             "llm_response": "{ ... IR JSON string ... }"
           }
         ]

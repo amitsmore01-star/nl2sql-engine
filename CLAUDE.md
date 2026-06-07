@@ -11,10 +11,10 @@ You are helping me build a Python NL2SQL system called `nl2sql-engine` from scra
 ---
 
 ## Project Context
-- Architecture document, schema (ABC_app.json) and SESSION_CONTEXT.md are uploaded to this project
+- Architecture document, schema (Acme_app.json) and SESSION_CONTEXT.md are uploaded to this project
 - SESSION_CONTEXT.md is the source of truth for what has been built and what decisions were made
 - Always read SESSION_CONTEXT.md before starting any story to understand current state
-- The real schema reference is ABC_app.json — used for all development and tests
+- The real schema reference is Acme_app.json — used for all development and tests
 
 ## Working Rules — follow these in every chat, every story
 - Nothing hardcoded — all config in YAML files, secrets in .env only

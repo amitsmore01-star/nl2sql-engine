@@ -52,7 +52,7 @@ VALID_FEEDBACK_FAIL = {
 
 def make_client(schema_dir="schemas") -> TestClient:
     """
-    Create a TestClient using the real ABC schema directory.
+    Create a TestClient using the real Acme schema directory.
     The feedback endpoint needs only app.state.settings (for the logger and the
     auth key) — no LLM provider or schema_repo required — but startup still loads
     the full app state, so we use the real schema dir like the query tests do.

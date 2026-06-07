@@ -95,7 +95,7 @@ class QueryResponseMeta(BaseModel):
 
     Example:
         {
-            "app_id": "ABC_app",
+            "app_id": "Acme_app",
             "app_schema_version": "1.0",
             "total_latency_ms": 310,
             "total_tokens_used": 2140
@@ -143,7 +143,7 @@ class QueryResponse(BaseModel):
                 "warnings": []
             },
             "meta": {
-                "app_id": "ABC_app",
+                "app_id": "Acme_app",
                 "app_schema_version": "1.0",
                 "total_latency_ms": 310,
                 "total_tokens_used": 2140
