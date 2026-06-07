@@ -58,7 +58,7 @@ cp .env.example .env        # Mac/Linux
 
 Start the server:
 ```bash
-uvicorn src.api.app:app --reload --port 8000
+uvicorn src.api.app:create_app --reload --port 8000
 ```
 
 Submit a query:
