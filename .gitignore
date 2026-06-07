@@ -42,3 +42,7 @@ nl2sql-engine-architecture.md
 
 #Claude
 Claude/
+
+# Internal working-state — build log / session tracker (not for public repo).
+# Engineering rationale lives in docs/DECISIONS.md instead.
+SESSION_CONTEXT.md

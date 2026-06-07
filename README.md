@@ -4,6 +4,25 @@ Converts natural language queries into deterministic, validated SQL `SELECT` sta
 
 ---
 
+## Project Status
+
+Under active development. Phase 1 is a deterministic, schema-driven pipeline; Phase 2 shifts toward an **agentic** architecture where the LLM owns join reasoning and self-correction while the engine owns schema validation and rule enforcement.
+
+- **Phase 1 (current)** — schema-driven NL→SQL over a REST API: app/table/column resolution, automatic joins, business rules, record versioning, and a deterministic SQL builder, with four pluggable LLM providers and modular tool endpoints. Generates validated SQL (optional execution is a Phase 2 capability).
+- **Phase 2 (planned)** — agent loop with LLM tool-calling and self-correction; async runtime; conversation memory and multi-turn queries; in-SQL aggregation/sorting; schema-aware RAG with embeddings; and an MCP server wrapper. **Optional** SQL execution against a read-only database (requires database infrastructure) feeds runtime errors back to the agent for self-correction.
+- **Phase 3 (planned)** — Docker packaging, background log-rotation, and extended human + automated feedback loops.
+
+> The CLI (`main.py`) is currently a scaffold; the API is the working entry point.
+
+---
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — full architecture: pipeline, LLM layer, deterministic validator, SQL builder, API, and testing strategy.
+- [docs/DECISIONS.md](docs/DECISIONS.md) — log of significant engineering decisions and their rationale, by component.
+
+---
+
 ## Setup
 
 ### 1. Clone the repo
@@ -35,13 +54,6 @@ cp .env.example .env        # Mac/Linux
 
 ## Run
 
-### CLI
-```bash
-python main.py query "give me customer name for customer CUST01 in Acme"
-python main.py query "give me customers" --app-id Acme_app
-python main.py query "give me customers" --output json
-```
-
 ### API
 ```bash
 uvicorn src.api.app:app --reload --port 8000
@@ -67,6 +79,7 @@ nl2sql-engine/
 ├── .env                  # Secrets (never commit)
 ├── .env.example          # Safe template
 ├── config/               # YAML config files
+├── docs/                 # Architecture documentation
 ├── schemas/              # App schema JSON files
 ├── logs/                 # Runtime logs (gitignored)
 ├── src/                  # All source code
