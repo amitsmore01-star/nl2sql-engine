@@ -11,6 +11,13 @@
 #      Demonstrates that "topaccount" must NOT match "top acc" or "top Acc"
 #      because "topaccount" is not in the synonym list. Added to default and
 #      minimal example sets. Reinforces strict synonym-only matching rule.
+# V4 - Bug fix: LLM emits wrong table in tables array for a phrase whose column
+#      belongs to a different table (e.g. tables has Major.Customer for source
+#      "top customername" but columns has Major.CustomerDemographics.CustomerName).
+#      Strengthened columns rules: the self-verification step now explicitly states
+#      that EXACT table name match is required — a related table with a similar name
+#      is not a substitute. Added column_table_exact_match example showing the
+#      incorrect pattern and correct fix. Registered in default and minimal sets.
 #
 # Sectioned prompt definitions for NL-to-IR strategies.
 # Loaded at startup by src/config/settings.py.
@@ -82,6 +89,9 @@ nl_to_structured_query:
       - Always specify the table a column belongs to — never leave table blank
       - If the user asks for a name or identifier, check the schema summary for the correct column name
       - Include all columns the user asked for — do not drop any
+      - Every table you name in a column object must also appear in the tables list with the EXACT same table name. Check each column entry against the tables array before finalising your response — if the exact table name is missing, add it.
+      - A related table does NOT count as a substitute. For example, if a column belongs to Major.CustomerDemographics but your tables array only contains Major.Customer, Major.CustomerDemographics is still missing — add it. These are two separate tables even though their names share a word.
+
 
     filters:
       - Extract filter conditions exactly as the user stated them — do not normalise or interpret
@@ -122,12 +132,14 @@ nl_to_structured_query:
       - strict_synonym_matching
       - negative_strict_synonym
       - customer_name_filter_table
+      - column_table_exact_match
 
     minimal:
       - hierarchy_with_filter
       - strict_synonym_matching
       - negative_strict_synonym
       - customer_name_filter_table
+      - column_table_exact_match
 
   examples:
 
@@ -217,6 +229,68 @@ nl_to_structured_query:
         which table owns a column in the schema summary before assigning the filter's
         "table" field. The user phrase "customer ASA" means filter by CustomerCID on
         Major.Customer (the identifier for that table), not by CustomerName.
+
+    column_table_exact_match:
+      schema: |
+        table: Major.Customer [customer, organization, org]
+          CustomerID
+          CustomerCID [Customer id, Customer cid]
+        table: Major.CustomerDemographics [Customer demographics, demographics]
+          CustomerID
+          CustomerName [Customer name, customername]
+        table: Major.Acc [Acc, top Acc, sub Acc]
+          AccID
+          AccName [Acc name]
+          CustomerID
+          ParentAccID
+      query: "give me top customername and top acc name for customer ASA in ABC"
+      correct: |
+        {
+          "tables": [
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.CustomerDemographics", "source": "top customername"},
+            {"table": "Major.Acc", "source": "top acc name"}
+          ],
+          "columns": [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "top customername"},
+            {"table": "Major.Acc", "column": "AccName", "source": "top acc name"}
+          ],
+          "filters": [
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+          ],
+          "limit": null,
+          "aggregation": null,
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      incorrect: |
+        {
+          "tables": [
+            {"table": "Major.Customer", "source": "top customername"},
+            {"table": "Major.Acc", "source": "top acc name"}
+          ],
+          "columns": [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName", "source": "top customername"},
+            {"table": "Major.Acc", "column": "AccName", "source": "top acc name"}
+          ],
+          "filters": [
+            {"table": "Major.Customer", "column": "CustomerCID", "operator": "=", "value": "ASA", "source": "customer ASA"}
+          ],
+          "limit": null,
+          "aggregation": null,
+          "sort": [],
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      why_wrong: |
+        The columns array correctly assigns CustomerName to Major.CustomerDemographics, but the
+        tables array lists Major.Customer for the same source "top customername". These are two
+        different tables — one does not substitute for the other. The self-verification step
+        requires checking the EXACT table name: Major.CustomerDemographics is missing from the
+        tables array, so it must be added with source "top customername". Major.Customer is still
+        needed (for the CustomerCID filter), but its source should reflect the filter phrase
+        "customer" — not "top customername", which belongs to the demographics table.
 
     strict_synonym_matching:
       schema: |

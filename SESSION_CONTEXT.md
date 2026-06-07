@@ -89,6 +89,12 @@ Story 6.6 — Full API Integration Test
                                     ← V3 (Bug 3). Added customer_name_filter_table example. Demonstrates that
                                       CustomerName lives on Major.CustomerDemographics, not Major.Customer.
                                       Added to both default and minimal example_sets.
+                                    ← V4 (Bug fix). Strengthened columns self-verification rule: EXACT table name
+                                      match required — a related table (e.g. Major.Customer) is NOT a substitute
+                                      for the column's actual table (e.g. Major.CustomerDemographics). Added
+                                      column_table_exact_match example showing the incorrect pattern (wrong table
+                                      in tables array, correct table in columns array) and the correct fix.
+                                      Registered in both default and minimal example_sets.
 - config/mock_responses.json        ← NEW V0. Mock LLM responses for JSON mode.
                                       Each entry has user_input (exact match string) and llm_response (IR JSON string). First entry:
                                       "give me topaccount name for customer ASA".
@@ -1306,6 +1312,20 @@ middleware.py V1 — missing_fields inside errors[0]:
   match current schema (CustomerName [Customer name, customername]).
   Full suite: 808 passed, 0 failed.
 
+
+### Bug Fix (prompts.yaml V4 — column table exact match)
+- LLM was emitting an inconsistent tables array: for a source phrase like "top customername",
+  it put Major.Customer in the tables array but correctly identified the column CustomerName
+  as belonging to Major.CustomerDemographics in the columns array. The self-verification rule
+  at columns line 85 already said "add it if missing" but the LLM treated Major.Customer as
+  a substitute because the names share a word — it never added Major.CustomerDemographics.
+  Fixed: split the single columns rule into two bullets. First bullet: EXACT table name match
+  required. Second bullet: a related table with a similar name is NOT a substitute — add the
+  column's actual table if missing, even if another table is already present for the same phrase.
+  Added column_table_exact_match example showing the incorrect pattern (Major.Customer in tables,
+  Major.CustomerDemographics in columns) and why it is wrong. No source code changed — prompt only.
+  Registered in both default and minimal example_sets.
+  Bug report: bug-reports/BUG-2026-06-06-column-table-mismatch.md
 
 ### Azure AI Foundry Provider (Adhoc added)
 - Static api-key header used — same pattern as all other providers
