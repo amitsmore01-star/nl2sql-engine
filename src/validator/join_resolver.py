@@ -39,6 +39,16 @@
 #      Extracted _try_join_instance helper (self-join / direct / junction bridge).
 #      Fixes NoJoinPathError when LLM returns tables out of join order
 #      (e.g. CustomerDemographics before Customer). Fully schema-driven — zero hardcoding.
+# V7 - Bug fix (missing bridge): Added _inject_bridge_tables pre-flight step.
+#      When the LLM omits a table needed only as a join intermediary (e.g. Major.Customer
+#      when CustomerDemographics and Acc are both requested), the existing deferred algorithm
+#      still raises NoJoinPathError because no ordering change can fix a genuinely absent
+#      table. _inject_bridge_tables checks connectivity of the proposed table set and
+#      auto-injects any non-junction schema table that bridges two disconnected components.
+#      The injected entry (source="auto-bridge") flows through the normal alias/role/join
+#      pipeline and rule_applicator applies its business rules correctly.
+#      A warning is recorded per injected table. Genuinely disconnected sets (e.g.
+#      [Plan, CustomerDemographics] with no single bridge) still raise NoJoinPathError.
 #
 # Deterministic join resolver.
 # Resolves join paths between all tables proposed by the LLM, using only
@@ -218,6 +228,109 @@ def _find_all_direct_relationships(from_table, to_table_name: str) -> list:
         for rel in from_table.relationships
         if rel.related_table == to_table_name and rel.type != "self"
     ]
+
+
+# ---------------------------------------------------------------------------
+# Bridge table injection  [V7]
+# ---------------------------------------------------------------------------
+
+def _inject_bridge_tables(
+    table_instances: list,
+    table_lookup: dict,
+    app_schema,
+    warnings: list,
+) -> None:
+    """
+    Detect when the proposed set of tables cannot be fully connected through
+    direct schema relationships, and inject any missing non-junction bridge
+    tables needed to make the set connected.
+
+    Called before alias assignment in run_join_resolver. Mutates table_instances
+    in-place by appending bridge entries with source="auto-bridge".
+    Appends a warning string to warnings for each injected table.
+
+    A bridge table is a non-junction table in the schema that has a direct
+    relationship to tables in two or more otherwise-disconnected components.
+
+    Example: [CustomerDemographics, Acc(top), Acc(sub), EPInd] — Customer missing.
+      CustomerDemographics only connects to Customer (not in proposed set).
+      Acc connects to Customer and EPInd.
+      Components: [{CustomerDemographics}, {Acc, EPInd}] (two disconnected groups).
+      Customer connects to CustomerDemographics (comp 0) AND Acc (comp 1).
+      Inject Customer. Set is now fully connected — join resolver proceeds normally.
+
+    Runs in multiple rounds so that more than one bridge can be injected if needed.
+    Stops when the set is fully connected or when no bridge candidate is found
+    (in which case NoJoinPathError will fire in the normal join resolver).
+
+    Junction tables are excluded — they are handled by the existing junction-bridge
+    logic inside _try_join_instance and must not appear in resolved_tables.
+    """
+    if len(table_instances) <= 1:
+        return
+
+    distinct_names: set[str] = {inst["table"] for inst in table_instances}
+
+    def can_directly_join(a: str, b: str) -> bool:
+        if a == b:
+            return True
+        a_schema = table_lookup.get(a)
+        b_schema = table_lookup.get(b)
+        if a_schema is None or b_schema is None:
+            return False
+        return (
+            _find_direct_relationship(a_schema, b) is not None
+            or _find_direct_relationship(b_schema, a) is not None
+        )
+
+    def build_components() -> list[set]:
+        visited: set = set()
+        components: list = []
+        for name in list(distinct_names):
+            if name in visited:
+                continue
+            component: set = set()
+            queue = [name]
+            while queue:
+                curr = queue.pop()
+                if curr in visited:
+                    continue
+                visited.add(curr)
+                component.add(curr)
+                for other in list(distinct_names):
+                    if other not in visited and can_directly_join(curr, other):
+                        queue.append(other)
+            components.append(component)
+        return components
+
+    for _ in range(len(table_lookup)):
+        components = build_components()
+        if len(components) <= 1:
+            break  # fully connected — nothing to inject
+
+        bridge_found = False
+        for bridge_name, bridge_schema in table_lookup.items():
+            if bridge_name in distinct_names:
+                continue  # already in the proposed set
+            if getattr(bridge_schema, "is_junction_table", False):
+                continue  # junction tables are handled separately
+
+            connected_to = [
+                i for i, comp in enumerate(components)
+                if any(can_directly_join(bridge_name, t) for t in comp)
+            ]
+            if len(connected_to) >= 2:
+                distinct_names.add(bridge_name)
+                table_instances.append({"table": bridge_name, "source": "auto-bridge"})
+                warnings.append(
+                    f"Auto-injected bridge table '{bridge_name}': LLM did not include "
+                    f"it but it is required to join the requested tables."
+                )
+                bridge_found = True
+                break
+
+        if not bridge_found:
+            break  # no bridge exists — let join resolver raise NoJoinPathError
 
 
 # ---------------------------------------------------------------------------
@@ -600,6 +713,14 @@ def run_join_resolver(
     # ------------------------------------------------------------------
     # Multiple tables -- count occurrences, assign aliases, resolve joins
     # ------------------------------------------------------------------
+
+    # [V7] Pre-flight: inject any missing bridge tables before alias assignment.
+    # When the LLM omits a table required only as a join intermediary (e.g.
+    # Major.Customer linking CustomerDemographics to Acc), this step detects the
+    # connectivity gap and appends the bridge entry with source="auto-bridge".
+    # The entry then flows through the alias/role/join pipeline unchanged.
+    _inject_bridge_tables(table_instances, table_lookup, app_schema, context.warnings)
+
     table_name_counts: dict = {}
     for entry in table_instances:
         t = entry["table"]

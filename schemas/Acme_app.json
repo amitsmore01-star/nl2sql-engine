@@ -139,7 +139,7 @@
       "columns": [
         { "name": "PlatformID", "type": "INT", "key": "primary" },
         { "name": "Config", "type": "VARCHAR(50)", "synonyms": ["platform Config"] },
-        { "name": "Name", "type": "VARCHAR(100)", "synonyms": ["platform name","PInd"] }
+        { "name": "Name", "type": "VARCHAR(100)", "synonyms": ["platform name","Indicator"] }
       ],
       "relationships": [
         { "related_table": "Major.Acc", "from": "PlatformID", "to": "PlatformID", "type": "one-to-many" }

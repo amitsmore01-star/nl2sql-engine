@@ -6,6 +6,9 @@
 #      for single-instance hierarchy tables (fixes empty-alias ".AccName" bug)
 # V4 - Bug fix (deferred join): Added class J (TestDeferredJoin) -- 8 tests.
 #      J1-J4 test multi-pass deferred resolution and true no-path detection.
+# V5 - Bug fix (missing bridge): Added class K (TestMissingBridgeInjection) -- 4 tests.
+#      K1-K2 test auto-injection of a missing bridge table (e.g. Major.Customer absent
+#      when CustomerDemographics and Acc are both requested). K3-K4 are regression guards.
 #      J5-J8 are regression guards confirming direct join, ordered join, self-join,
 #      and junction bridge all still produce identical output after the algorithm change.
 #
@@ -39,6 +42,12 @@
 #
 # G -- Logging
 #   G1: Successful run emits VALIDATION_RESULT log
+#
+# K -- Missing bridge table auto-injection
+#   K1: [CD, Acc(top), Acc(sub), EPInd] no Customer -> Customer auto-injected, 4 joins, success
+#   K2: Same setup -> auto-bridge source="auto-bridge", alias assigned, warning present
+#   K3: Regression -- Customer already present -> no auto-injection, no bridge warning
+#   K4: Regression -- genuinely disconnected set [Plan, CD] -> NoJoinPathError still raised
 
 import pytest
 
@@ -749,3 +758,143 @@ class TestDeferredJoin:
         join_tables = [j["table_name"] for j in result.resolved_joins]
         assert "Major.PackagePlan" in join_tables
         assert "Major.Plan" in join_tables
+
+
+# ---------------------------------------------------------------------------
+# K -- Missing bridge table auto-injection
+# ---------------------------------------------------------------------------
+
+class TestMissingBridgeInjection:
+    """
+    Tests for the bridge-table auto-injection step added to run_join_resolver.
+
+    Background: when the LLM omits a table that is needed purely as a join
+    intermediary (e.g. Major.Customer when both Major.CustomerDemographics and
+    Major.Acc are requested), the join resolver previously raised NoJoinPathError.
+    The fix detects this by checking whether the proposed table set is connected
+    via schema relationships, then auto-injects any non-junction bridge table
+    that connects two otherwise-disconnected components.
+
+    K1-K2: The exact failing scenario from the production log.
+    K3-K4: Regression guards confirming existing behaviour is unaffected.
+    """
+
+    def test_K1_missing_customer_auto_injected_success(
+        self, abc_schema_repo, capturing_logger
+    ):
+        """
+        K1: [CustomerDemographics, Acc(top), Acc(sub), EPInd] — Customer absent.
+        Major.Customer is the only path between CustomerDemographics and Acc.
+        Resolver must auto-inject Customer, resolve all joins, return success.
+
+        This is the exact table set returned by the LLM for the failing query:
+        'get customer name top account name, sub account name for top account
+        with platform name is CCF in ACME'
+        """
+        ctx = _make_context(
+            [
+                {"table": "Major.CustomerDemographics", "source": "customer name"},
+                {"table": "Major.Acc",                  "source": "top account name"},
+                {"table": "Major.Acc",                  "source": "sub account name"},
+                {"table": "Config.EPInd",               "source": "platform name"},
+            ],
+            query=(
+                "get customer name top account name, sub account name "
+                "for top account with platform name is CCF in ACME"
+            ),
+        )
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+
+        # Customer must have been injected
+        table_names = [e["table"] for e in result.resolved_tables]
+        assert "Major.Customer" in table_names
+
+        # All instances must have aliases
+        for entry in result.resolved_tables:
+            assert "alias" in entry and entry["alias"]
+
+        # 4 joins: Customer↔CD, Customer↔Acc(top), Acc(top)↔Acc(sub), Acc↔EPInd
+        assert len(result.resolved_joins) == 4
+
+    def test_K2_auto_bridge_properties(self, abc_schema_repo, capturing_logger):
+        """
+        K2: Same setup as K1.
+        Verify the auto-injected Customer entry has source='auto-bridge', alias='c',
+        and that context.warnings contains a message naming the injected table.
+        """
+        ctx = _make_context(
+            [
+                {"table": "Major.CustomerDemographics", "source": "customer name"},
+                {"table": "Major.Acc",                  "source": "top account name"},
+                {"table": "Major.Acc",                  "source": "sub account name"},
+                {"table": "Config.EPInd",               "source": "platform name"},
+            ],
+        )
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        customer_entries = [
+            e for e in result.resolved_tables
+            if e["table"] == "Major.Customer"
+        ]
+        assert len(customer_entries) == 1
+        injected = customer_entries[0]
+
+        assert injected["source"] == "auto-bridge"
+        assert injected.get("alias") == "c"
+
+        assert any(
+            "Major.Customer" in w and "auto-injected" in w.lower()
+            for w in result.warnings
+        )
+
+    def test_K3_regression_customer_present_no_injection(
+        self, abc_schema_repo, capturing_logger
+    ):
+        """
+        K3: Regression — Customer already in the table list.
+        No auto-injection should occur; no bridge warning should be emitted.
+        Result must still produce 4 joins (same structure as K1).
+        """
+        ctx = _make_context(
+            [
+                {"table": "Major.Customer",             "source": "customer"},
+                {"table": "Major.CustomerDemographics", "source": "customer name"},
+                {"table": "Major.Acc",                  "source": "top account name"},
+                {"table": "Major.Acc",                  "source": "sub account name"},
+                {"table": "Config.EPInd",               "source": "platform name"},
+            ],
+        )
+        result = run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert result.status == "success"
+        assert len(result.resolved_joins) == 4
+
+        assert not any("auto-injected" in w.lower() for w in result.warnings)
+
+        customer_entries = [
+            e for e in result.resolved_tables
+            if e["table"] == "Major.Customer"
+        ]
+        assert len(customer_entries) == 1
+        assert customer_entries[0]["source"] != "auto-bridge"
+
+    def test_K4_regression_genuinely_disconnected_still_raises(
+        self, abc_schema_repo, capturing_logger
+    ):
+        """
+        K4: Regression — [Plan, CustomerDemographics].
+        Plan connects only through PackagePlan (junction, excluded from bridge search).
+        CustomerDemographics connects only through Customer → no single non-junction
+        table bridges both components simultaneously.
+        NoJoinPathError must still be raised after the bridge-injection step.
+        """
+        ctx = _make_context([
+            {"table": "Major.Plan",                 "source": "plan"},
+            {"table": "Major.CustomerDemographics", "source": "customer name"},
+        ])
+        with pytest.raises(NoJoinPathError) as exc_info:
+            run_join_resolver(ctx, abc_schema_repo, capturing_logger)
+
+        assert exc_info.value.code == "NO_JOIN_PATH"

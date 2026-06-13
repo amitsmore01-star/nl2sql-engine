@@ -29,6 +29,13 @@
 #      full dicts in context.resolved_filters. Filter failures raise
 #      NoRelevantColumnsError (same hard-fail as columns). resolved_filters added to
 #      the VALIDATION_RESULT log payload.
+# V4 - Bug fix (column table auto-inject): Stage 2 now auto-injects a missing column
+#      table when the LLM correctly names a column's table in the columns array but
+#      forgets to include that table in the tables array. If the referenced table is
+#      a valid (non-junction) schema table, it is appended to resolved_tables using
+#      the column's source phrase, a warning is recorded, and validation proceeds.
+#      Only truly non-schema tables still raise NoRelevantColumnsError. Mirrors the
+#      bridge-injection approach in join_resolver V7.
 #
 # Deterministic table and column validator.
 # Validates every table and column proposed by the LLM against the loaded schema.
@@ -308,13 +315,26 @@ def run_table_column_validator(
         col_table = entry.get("table", "")
         col_name = entry.get("column", "")
 
-        # Column's table must have been proposed
+        # Column's table must have been proposed.
+        # [V4] If the table is absent from the proposed list but IS a valid
+        # schema table, the LLM forgot to sync its own column entry — auto-inject
+        # the table instead of failing. Non-schema tables still raise.
         if col_table not in proposed_table_name_set:
-            invalid_columns.append(
-                f"{col_table}.{col_name} "
-                f"(table '{col_table}' was not in proposed tables)"
-            )
-            continue
+            if col_table in valid_table_names:
+                col_source = entry.get("source", "")
+                cleaned_tables.append({"table": col_table, "source": col_source})
+                proposed_table_name_set.add(col_table)
+                context.warnings.append(
+                    f"Auto-injected table '{col_table}' (source '{col_source}'): "
+                    f"LLM proposed column '{col_name}' on this table but did not "
+                    f"include the table in the tables array."
+                )
+            else:
+                invalid_columns.append(
+                    f"{col_table}.{col_name} "
+                    f"(table '{col_table}' was not in proposed tables)"
+                )
+                continue
 
         # Column must exist on its table in the schema
         table_schema = table_lookup.get(col_table)

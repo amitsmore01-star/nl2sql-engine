@@ -1,6 +1,9 @@
 # tests/validator/test_table_column_validator.py
 # V0 - Initial implementation
 # V3 - Added TestRoleDuplicateTables (P7-P12) for Bug 2 role-dedup
+# V4 - Bug fix (column table auto-inject): Updated D2 (valid-schema missing table now
+#      auto-injected → moved to L1/L2); D2 now tests truly non-schema column table.
+#      Added class L (TestColumnTableAutoInject) — 4 tests (L1-L4).
 #
 # Tests for run_table_column_validator() in src/validator/table_column_validator.py
 #
@@ -303,20 +306,21 @@ class TestColumnValidationFailurePath:
         assert exc_info.value.code == "NO_RELEVANT_COLUMNS"
         assert "FakeColumn" in exc_info.value.message
 
-    def test_d2_column_references_table_not_in_proposed_tables_raises(
+    def test_d2_column_references_nonexistent_table_raises(
         self, abc_schema_repo, test_logger
     ):
         """
-        Column references Major.CustomerDemographics but only Major.Customer
-        was proposed in tables → NoRelevantColumnsError.
-        The column's table was never proposed.
+        Column references 'Major.Nonexistent' — a table that does not exist in
+        the schema at all (not just missing from the proposed list).
+        Must still raise NoRelevantColumnsError even after the auto-inject fix,
+        because auto-inject only fires for valid schema tables.
         """
         tables = [{"table": "Major.Customer", "source": "customer"}]
         columns = [
             {
-                "table": "Major.CustomerDemographics",
-                "column": "CustomerName",
-                "source": "customer name",
+                "table": "Major.Nonexistent",
+                "column": "SomeColumn",
+                "source": "some column",
             }
         ]
         context = make_context(tables=tables, columns=columns)
@@ -325,7 +329,7 @@ class TestColumnValidationFailurePath:
             run_table_column_validator(context, abc_schema_repo, test_logger)
 
         assert exc_info.value.code == "NO_RELEVANT_COLUMNS"
-        assert "Major.CustomerDemographics" in exc_info.value.message
+        assert "Major.Nonexistent" in exc_info.value.message
 
     def test_d3_valid_table_wrong_column_raises(
         self, abc_schema_repo, test_logger
@@ -677,3 +681,136 @@ class TestRoleDuplicateTables:
         assert len(result.resolved_tables) == 1
         assert result.resolved_tables[0]["source"] == "top acc name"
         assert context.warnings == []
+
+
+# ---------------------------------------------------------------------------
+# Group L — Column table auto-injection  [Bug 3]
+# ---------------------------------------------------------------------------
+# When the LLM places a column on a valid schema table but forgets to list that
+# table in the tables array, the validator previously raised NoRelevantColumnsError.
+# The fix auto-injects the missing table into resolved_tables (using the column's
+# source phrase) instead of failing, mirroring the bridge-injection approach used
+# in join_resolver for missing join-intermediary tables.
+
+class TestColumnTableAutoInject:
+    """
+    L1-L2: The exact failing scenario — CustomerDemographics in columns but not
+            in the tables list.
+    L3:     Regression — a column on a table that does not exist in the schema
+            at all still raises NoRelevantColumnsError.
+    L4:     Regression — normal case where table IS in the proposed list produces
+            no injection and no warning.
+    """
+
+    def test_L1_column_table_missing_from_proposed_auto_injected(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        L1: LLM lists Customer + Acc in tables but CustomerDemographics only in
+        columns (CustomerName). CustomerDemographics is a valid schema table —
+        the validator must auto-inject it and return success.
+
+        This is the exact pattern from the production log for:
+        'get customer name, sub acc key, top account key for customercid 1231231'
+        """
+        tables = [
+            {"table": "Major.Customer", "source": "customer"},
+            {"table": "Major.Acc",      "source": "sub acc"},
+            {"table": "Major.Acc",      "source": "top account"},
+        ]
+        columns = [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName",
+             "source": "customer name"},
+            {"table": "Major.Acc", "column": "AccKey", "source": "sub acc key"},
+            {"table": "Major.Acc", "column": "AccKey", "source": "top account key"},
+        ]
+        filters = [
+            {"table": "Major.Customer", "column": "CustomerCID",
+             "operator": "=", "value": "1231231", "source": "customercid 1231231"},
+        ]
+        context = make_context(tables=tables, columns=columns, filters=filters)
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert result.status == "success"
+
+        table_names = [e["table"] for e in result.resolved_tables]
+        assert "Major.CustomerDemographics" in table_names
+
+        assert len(result.resolved_columns) == 3
+        assert any(
+            c["column"] == "CustomerName" for c in result.resolved_columns
+        )
+
+    def test_L2_auto_injected_table_properties(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        L2: Same setup as L1.
+        Verify the auto-injected CustomerDemographics entry has the column's
+        source phrase and that context.warnings names the injection.
+        """
+        tables = [{"table": "Major.Customer", "source": "customer"}]
+        columns = [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName",
+             "source": "customer name"},
+        ]
+        context = make_context(tables=tables, columns=columns)
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        cd_entries = [
+            e for e in result.resolved_tables
+            if e["table"] == "Major.CustomerDemographics"
+        ]
+        assert len(cd_entries) == 1
+        assert cd_entries[0]["source"] == "customer name"
+
+        assert any(
+            "Major.CustomerDemographics" in w and "auto-injected" in w.lower()
+            for w in result.warnings
+        )
+
+    def test_L3_regression_nonschema_column_table_still_raises(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        L3: Regression — column references 'Major.Nonexistent', a table that
+        does not exist in the schema at all.
+        Auto-inject only fires for valid schema tables — this must still raise
+        NoRelevantColumnsError.
+        """
+        tables = [{"table": "Major.Customer", "source": "customer"}]
+        columns = [
+            {"table": "Major.Nonexistent", "column": "SomeCol", "source": "x"},
+        ]
+        context = make_context(tables=tables, columns=columns)
+
+        with pytest.raises(NoRelevantColumnsError) as exc_info:
+            run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert exc_info.value.code == "NO_RELEVANT_COLUMNS"
+        assert "Major.Nonexistent" in exc_info.value.message
+
+    def test_L4_regression_normal_column_no_injection(
+        self, abc_schema_repo, test_logger
+    ):
+        """
+        L4: Regression — CustomerDemographics IS in the tables list and
+        CustomerName IS on it. Normal flow: no auto-injection, no warning.
+        """
+        tables = [
+            {"table": "Major.Customer",             "source": "customer"},
+            {"table": "Major.CustomerDemographics", "source": "customer name"},
+        ]
+        columns = [
+            {"table": "Major.CustomerDemographics", "column": "CustomerName",
+             "source": "customer name"},
+        ]
+        context = make_context(tables=tables, columns=columns)
+
+        result = run_table_column_validator(context, abc_schema_repo, test_logger)
+
+        assert result.status == "success"
+        assert not any("auto-injected" in w.lower() for w in result.warnings)
+        assert len(result.resolved_tables) == 2

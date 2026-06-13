@@ -13,6 +13,8 @@ Add a new row each time a bug is fixed, and link it to its full report file.
 
 | Date | Bug | Area / File | Status | Report |
 |------|-----|-------------|--------|--------|
+| 2026-06-13 | NoRelevantColumnsError when LLM omits a column's table from the tables array (e.g. CustomerDemographics in columns but not in tables) | src/validator/table_column_validator.py | Fixed | [link](./BUG-2026-06-13-column-table-missing-from-proposed.md) |
+| 2026-06-13 | NoJoinPathError when LLM omits a required bridge table (e.g. Customer absent when CustomerDemographics + Acc both requested) | src/validator/join_resolver.py | Fixed | [link](./BUG-2026-06-13-missing-bridge-table-no-join-path.md) |
 | 2026-06-06 | Role-duplicate table entries — LLM emits one table per column, causing Acc to join 4× instead of 2× | src/validator/table_column_validator.py | Fixed | [link](./BUG-2026-06-06-role-duplicate-table-entries.md) |
 | 2026-06-06 | NoJoinPathError for out-of-order LLM table output (e.g. CustomerDemographics before Customer) | src/validator/join_resolver.py | Fixed | [link](./BUG-2026-06-06-deferred-join-out-of-order-tables.md) |
 | _YYYY-MM-DD_ | _short description of the bug_ | _src/.../file.py_ | Fixed | [link](./BUG-YYYY-MM-DD-short-slug.md) |
